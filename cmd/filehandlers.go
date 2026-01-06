@@ -5,26 +5,26 @@ import (
 	"github.com/tanq16/nits/internal/filehandlers"
 )
 
-var organizeCmd = &cobra.Command{
-	Use:   "organize",
-	Short: "Organize files by grouping them into folders based on base name",
+var fileOrganizerCmd = &cobra.Command{
+	Use:   "file-organizer",
+	Short: "Organize files by grouping them into folders based on base name. eg. goku_1.jpg, goku_2.jpg -> goku/",
 	Run: func(cmd *cobra.Command, args []string) {
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
-		filehandlers.RunOrganize(dryRun)
+		filehandlers.RunFileOrganizer(dryRun)
 	},
 }
 
-var smartUnzipCmd = &cobra.Command{
-	Use:   "smart-unzip",
+var fileUnzipperCmd = &cobra.Command{
+	Use:   "file-unzipper",
 	Short: "Unzip all zip files in the current directory",
 	Long:  `Unzips any zip files in CWD, creating a new directory for each and unzipping contents into it. If the zip contains a single subdirectory, it will be flattened into the parent.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		filehandlers.RunSmartUnzip()
+		filehandlers.RunFileUnzipper()
 	},
 }
 
 func init() {
-	organizeCmd.Flags().BoolP("dry-run", "r", false, "Check without changes")
-	rootCmd.AddCommand(organizeCmd)
-	rootCmd.AddCommand(smartUnzipCmd)
+	fileOrganizerCmd.Flags().BoolP("dry-run", "r", false, "Check without changes")
+	rootCmd.AddCommand(fileOrganizerCmd)
+	rootCmd.AddCommand(fileUnzipperCmd)
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func RunOrganize(dryRun bool) {
+func RunFileOrganizer(dryRun bool) {
 	currentDir, _ := os.Getwd()
 	entries, _ := os.ReadDir(currentDir)
 	groups := make(map[string][]string)

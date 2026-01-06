@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func RunSmartUnzip() {
+func RunFileUnzipper() {
 	currentDir, _ := os.Getwd()
 	entries, _ := os.ReadDir(currentDir)
 	for _, entry := range entries {
