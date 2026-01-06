@@ -15,7 +15,7 @@ var fileOrganizerCmd = &cobra.Command{
 }
 
 var fileUnzipperCmd = &cobra.Command{
-	Use:   "unzipper",
+	Use:   "file-unzipper",
 	Short: "Unzip all zip files in the current directory",
 	Long:  `Unzips any zip files in CWD, creating a new directory for each and unzipping contents into it. If the zip contains a single subdirectory, it will be flattened into the parent.`,
 	Run: func(cmd *cobra.Command, args []string) {

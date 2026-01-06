@@ -8,14 +8,30 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 )
 
-func RunImgWebp(dryRun bool) {
+func RunImgWebp(dryRun bool, workers int) {
 	path := "."
 	extensions := []string{".jpg", ".jpeg", ".png", ".tiff"}
 	entries, _ := os.ReadDir(path)
+	var paths []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if !slices.Contains(extensions, ext) {
+			continue
+		}
+		paths = append(paths, filepath.Join(path, entry.Name()))
+	}
+	if len(paths) == 0 {
+		return
+	}
+
 	stats := map[string]int64{
 		"processed":         0,
 		"quality_98":        0,
@@ -25,70 +41,99 @@ func RunImgWebp(dryRun bool) {
 		"final_over_190":    0,
 		"total_saved_bytes": 0,
 	}
+	var statsMutex sync.Mutex
 	var detailedLogs []string
+	var logsMutex sync.Mutex
 	var originalFiles []string
+	var filesMutex sync.Mutex
 	magickCmd := getImageMagickCommand()
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		filename := entry.Name()
-		ext := strings.ToLower(filepath.Ext(filename))
-		if !slices.Contains(extensions, ext) {
-			continue
-		}
-		inputPath := filepath.Join(path, filename)
-		origSize := getFileSize(inputPath)
-		uuidName := strings.TrimSuffix(filename, ext)
-		inputExt := strings.TrimPrefix(ext, ".")
-		webpPath := filepath.Join(path, fmt.Sprintf("%s.webp", uuidName))
-		tempWebp := filepath.Join(path, fmt.Sprintf("%s_temp.webp", uuidName))
-		stats["processed"]++
-		originalFiles = append(originalFiles, filename)
+	pathChan := make(chan string, len(paths))
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for inputPath := range pathChan {
+				filename := filepath.Base(inputPath)
+				ext := strings.ToLower(filepath.Ext(filename))
+				origSize := getFileSize(inputPath)
+				uuidName := strings.TrimSuffix(filename, ext)
+				inputExt := strings.TrimPrefix(ext, ".")
+				webpPath := filepath.Join(path, fmt.Sprintf("%s.webp", uuidName))
+				tempWebp := filepath.Join(path, fmt.Sprintf("%s_temp.webp", uuidName))
+				statsMutex.Lock()
+				stats["processed"]++
+				statsMutex.Unlock()
+				filesMutex.Lock()
+				originalFiles = append(originalFiles, filename)
+				filesMutex.Unlock()
 
-		exec.Command(magickCmd, inputPath, "-quality", "98", webpPath).Run()
-		webpSize := getFileSize(webpPath)
-		if webpSize >= origSize {
-			exec.Command(magickCmd, inputPath, "-quality", "95", webpPath).Run()
-			stats["quality_95"]++
-			webpSize = getFileSize(webpPath)
-		} else {
-			stats["quality_98"]++
-		}
+				exec.Command(magickCmd, inputPath, "-quality", "98", webpPath).Run()
+				webpSize := getFileSize(webpPath)
+				if webpSize >= origSize {
+					exec.Command(magickCmd, inputPath, "-quality", "95", webpPath).Run()
+					statsMutex.Lock()
+					stats["quality_95"]++
+					statsMutex.Unlock()
+					webpSize = getFileSize(webpPath)
+				} else {
+					statsMutex.Lock()
+					stats["quality_98"]++
+					statsMutex.Unlock()
+				}
 
-		if webpSize > 190*1024 {
-			resizedThisFile := false
-			for scale := 90; scale >= 60; scale -= 10 {
-				exec.Command(magickCmd, webpPath, "-resize", fmt.Sprintf("%d%%", scale), tempWebp).Run()
-				newSize := getFileSize(tempWebp)
-				resizedThisFile = true
-				if newSize <= 190*1024 || scale == 60 {
-					os.Rename(tempWebp, webpPath)
-					webpSize = newSize
-					break
+				if webpSize > 190*1024 {
+					resizedThisFile := false
+					for scale := 90; scale >= 60; scale -= 10 {
+						exec.Command(magickCmd, webpPath, "-resize", fmt.Sprintf("%d%%", scale), tempWebp).Run()
+						newSize := getFileSize(tempWebp)
+						resizedThisFile = true
+						if newSize <= 190*1024 || scale == 60 {
+							os.Rename(tempWebp, webpPath)
+							webpSize = newSize
+							break
+						}
+					}
+					if resizedThisFile {
+						statsMutex.Lock()
+						stats["resized"]++
+						statsMutex.Unlock()
+					}
+					if _, err := os.Stat(tempWebp); err == nil {
+						os.Remove(tempWebp)
+					}
+				}
+				if webpSize <= 190*1024 {
+					statsMutex.Lock()
+					stats["final_under_190"]++
+					statsMutex.Unlock()
+				} else {
+					statsMutex.Lock()
+					stats["final_over_190"]++
+					statsMutex.Unlock()
+				}
+				statsMutex.Lock()
+				stats["total_saved_bytes"] += (origSize - webpSize)
+				statsMutex.Unlock()
+
+				if dryRun {
+					logEntry := fmt.Sprintf("%s: %s -> webp | %.1fKB -> %.1fKB", filename, inputExt, float64(origSize)/1024, float64(webpSize)/1024)
+					logsMutex.Lock()
+					detailedLogs = append(detailedLogs, logEntry)
+					logsMutex.Unlock()
+				} else {
+					os.Remove(inputPath)
 				}
 			}
-			if resizedThisFile {
-				stats["resized"]++
-			}
-			if _, err := os.Stat(tempWebp); err == nil {
-				os.Remove(tempWebp)
-			}
-		}
-		if webpSize <= 190*1024 {
-			stats["final_under_190"]++
-		} else {
-			stats["final_over_190"]++
-		}
-		stats["total_saved_bytes"] += (origSize - webpSize)
-
-		if dryRun {
-			detailedLogs = append(detailedLogs, fmt.Sprintf("%s: %s -> webp | %.1fKB -> %.1fKB", filename, inputExt, float64(origSize)/1024, float64(webpSize)/1024))
-		} else {
-			os.Remove(inputPath)
-		}
+		}()
 	}
+	for _, path := range paths {
+		pathChan <- path
+	}
+	close(pathChan)
+	wg.Wait()
+
 	if dryRun {
 		os.WriteFile("to-delete.txt", []byte(strings.Join(originalFiles, "\n")), 0644)
 	}

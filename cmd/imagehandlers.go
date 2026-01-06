@@ -10,7 +10,8 @@ var imgWebpCmd = &cobra.Command{
 	Short: "Compress all images in CWD to WebP format with quality optimization",
 	Run: func(cmd *cobra.Command, args []string) {
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
-		imagehandlers.RunImgWebp(dryRun)
+		workers, _ := cmd.Flags().GetInt("workers")
+		imagehandlers.RunImgWebp(dryRun, workers)
 	},
 }
 
@@ -26,6 +27,7 @@ var imgDedupeCmd = &cobra.Command{
 
 func init() {
 	imgWebpCmd.Flags().BoolP("dry-run", "r", false, "Process images without deleting originals")
+	imgWebpCmd.Flags().IntP("workers", "w", 4, "Number of workers for parallel processing")
 	imgDedupeCmd.Flags().IntP("hamming-distance", "d", 10, "Maximum Hamming distance for duplicate detection")
 	imgDedupeCmd.Flags().IntP("workers", "w", 4, "Number of workers for parallel processing")
 	rootCmd.AddCommand(imgWebpCmd)

@@ -34,7 +34,7 @@ jobs:
           go-version-file: 'go.mod'
       - name: Build Binary
         run: |
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o nits-${{ matrix.os }}-${{ matrix.arch }} .
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -ldflags="-s -w" -o nits-${{ matrix.os }}-${{ matrix.arch }} .
       - name: Upload Release Asset
         run: |
           gh release upload Release "nits-${{ matrix.os }}-${{ matrix.arch }}" --clobber
