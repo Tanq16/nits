@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Create Release
         run: |
-          gh release create Release --title "Release" --notes "Release" --draft
+          gh release create Release --title "Release" --notes "Release" --draft || true
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -37,7 +37,7 @@ jobs:
           GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o nits-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }} .
       - name: Upload Release Asset
         run: |
-          gh release upload Release "nits-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}"
+          gh release upload Release "nits-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
