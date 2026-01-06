@@ -7,10 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
-func RunFileUnzipper() {
+func RunFileUnzipper(uuidNames bool) {
 	currentDir, _ := os.Getwd()
 	entries, _ := os.ReadDir(currentDir)
 	for _, entry := range entries {
@@ -22,6 +23,9 @@ func RunFileUnzipper() {
 			continue
 		}
 		base := strings.TrimSuffix(name, ".zip")
+		if uuidNames {
+			base = generateUUID()
+		}
 		basePath := filepath.Join(currentDir, base)
 		log.Info().Str("zip", name).Str("directory", base).Msg("Processing zip file")
 		os.MkdirAll(basePath, 0755)
@@ -34,6 +38,9 @@ func RunFileUnzipper() {
 			continue
 		}
 		os.Remove(newZipPath)
+		if uuidNames {
+			renameToUUIDs(basePath)
+		}
 		subEntries, _ := os.ReadDir(basePath)
 		var visibleFiles []string
 		for _, subEntry := range subEntries {
@@ -75,4 +82,31 @@ func extractZip(zipPath, destDir string) error {
 		rc.Close()
 	}
 	return nil
+}
+
+func generateUUID() string {
+	ret, _ := uuid.NewRandom()
+	return ret.String()
+}
+
+func renameToUUIDs(dir string) {
+	entries, _ := os.ReadDir(dir)
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		oldPath := filepath.Join(dir, entry.Name())
+		var newName string
+		if entry.IsDir() {
+			newName = generateUUID()
+		} else {
+			ext := filepath.Ext(entry.Name())
+			newName = generateUUID() + ext
+		}
+		newPath := filepath.Join(dir, newName)
+		os.Rename(oldPath, newPath)
+		if entry.IsDir() {
+			renameToUUIDs(newPath)
+		}
+	}
 }

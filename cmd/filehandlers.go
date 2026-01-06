@@ -19,12 +19,14 @@ var fileUnzipperCmd = &cobra.Command{
 	Short: "Unzip all zip files in the current directory",
 	Long:  `Unzips any zip files in CWD, creating a new directory for each and unzipping contents into it. If the zip contains a single subdirectory, it will be flattened into the parent.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		filehandlers.RunFileUnzipper()
+		uuidNames, _ := cmd.Flags().GetBool("uuid-names")
+		filehandlers.RunFileUnzipper(uuidNames)
 	},
 }
 
 func init() {
 	fileOrganizerCmd.Flags().BoolP("dry-run", "r", false, "Check without changes")
+	fileUnzipperCmd.Flags().BoolP("uuid-names", "u", false, "Rename directories and files to UUIDs")
 	rootCmd.AddCommand(fileOrganizerCmd)
 	rootCmd.AddCommand(fileUnzipperCmd)
 }

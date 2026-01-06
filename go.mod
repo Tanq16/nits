@@ -4,6 +4,7 @@ go 1.24.5
 
 require (
 	github.com/corona10/goimagehash v1.1.0
+	github.com/google/uuid v1.6.0
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/image v0.34.0
