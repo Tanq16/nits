@@ -19,13 +19,15 @@ var imgDedupeCmd = &cobra.Command{
 	Short: "Find duplicate images in CWD using perceptual hashing",
 	Run: func(cmd *cobra.Command, args []string) {
 		maxHammingDistance, _ := cmd.Flags().GetInt("hamming-distance")
-		imagehandlers.RunImgDedupe(maxHammingDistance)
+		workers, _ := cmd.Flags().GetInt("workers")
+		imagehandlers.RunImgDedupe(maxHammingDistance, workers)
 	},
 }
 
 func init() {
 	imgWebpCmd.Flags().BoolP("dry-run", "r", false, "Process images without deleting originals")
 	imgDedupeCmd.Flags().IntP("hamming-distance", "d", 10, "Maximum Hamming distance for duplicate detection")
+	imgDedupeCmd.Flags().IntP("workers", "w", 4, "Number of workers for parallel processing")
 	rootCmd.AddCommand(imgWebpCmd)
 	rootCmd.AddCommand(imgDedupeCmd)
 }

@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/corona10/goimagehash"
 	"github.com/rs/zerolog/log"
+	_ "golang.org/x/image/webp"
 )
 
 type ImageInfo struct {
@@ -23,14 +25,14 @@ type ImageInfo struct {
 	Area     int
 }
 
-func RunImgDedupe(maxHammingDistance int) {
+func RunImgDedupe(maxHammingDistance int, workers int) {
 	dir, err := os.Getwd()
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get current directory")
 		return
 	}
 	log.Info().Str("directory", dir).Msg("Scanning images")
-	images := scanImages(dir)
+	images := scanImages(dir, workers)
 	if len(images) == 0 {
 		fmt.Println("No images found.")
 		return
@@ -40,26 +42,50 @@ func RunImgDedupe(maxHammingDistance int) {
 	printResults(groups)
 }
 
-func scanImages(dir string) []*ImageInfo {
-	var images []*ImageInfo
+func scanImages(dir string, workers int) []*ImageInfo {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		log.Error().Err(err).Str("directory", dir).Msg("Failed to read directory")
 		return nil
 	}
+	var paths []string
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" {
 			continue
 		}
-		path := filepath.Join(dir, entry.Name())
-		info := processImage(path)
-		if info != nil {
-			images = append(images, info)
-		}
+		paths = append(paths, filepath.Join(dir, entry.Name()))
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	pathChan := make(chan string, len(paths))
+	resultChan := make(chan *ImageInfo, len(paths))
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range pathChan {
+				info := processImage(path)
+				if info != nil {
+					resultChan <- info
+				}
+			}
+		}()
+	}
+	for _, path := range paths {
+		pathChan <- path
+	}
+	close(pathChan)
+	wg.Wait()
+	close(resultChan)
+	var images []*ImageInfo
+	for info := range resultChan {
+		images = append(images, info)
 	}
 	return images
 }
@@ -97,14 +123,14 @@ func groupDuplicates(images []*ImageInfo, maxHammingDistance int) [][]*ImageInfo
 	processed := make(map[string]bool)
 	for i := range images {
 		seed := images[i]
-		if processed[seed.Filepath] {
+		if seed == nil || processed[seed.Filepath] {
 			continue
 		}
 		currentGroup := []*ImageInfo{seed}
 		processed[seed.Filepath] = true
 		for j := i + 1; j < len(images); j++ {
 			candidate := images[j]
-			if processed[candidate.Filepath] {
+			if candidate == nil || processed[candidate.Filepath] {
 				continue
 			}
 			distance, err := seed.Phash.Distance(candidate.Phash)
@@ -128,21 +154,22 @@ func groupDuplicates(images []*ImageInfo, maxHammingDistance int) [][]*ImageInfo
 
 func printResults(groups [][]*ImageInfo) {
 	if len(groups) == 0 {
-		fmt.Println("No duplicate images found.")
+		log.Info().Msg("No duplicate images found.")
 		return
 	}
-	fmt.Printf("\nFound %d sets of duplicates:\n\n", len(groups))
+	log.Info().Int("groups", len(groups)).Msg("Found sets of duplicates")
+	fmt.Println()
 	for i, group := range groups {
 		best := group[0]
 		duplicates := group[1:]
-		fmt.Printf("Set #%d\n", i+1)
-		fmt.Printf("  KEEP  : %s (%dx%d)\n", best.Filename, best.Width, best.Height)
+		fmt.Printf("SET #%d\n", i+1)
+		fmt.Printf("  - KEEP  : %s (%dx%d)\n", best.Filename, best.Width, best.Height)
 		var dupNames []string
 		for _, d := range duplicates {
 			dupNames = append(dupNames, fmt.Sprintf("%s (%dx%d)", d.Filename, d.Width, d.Height))
 		}
-		fmt.Printf("  DELETE: %s\n", strings.Join(dupNames, ", "))
-		fmt.Printf("  Cmd   : rm")
+		fmt.Printf("  - DELETE: %s\n", strings.Join(dupNames, ", "))
+		fmt.Printf("  - CMD   : rm")
 		for _, d := range duplicates {
 			fmt.Printf(" %q", d.Filename)
 		}
