@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [linux, windows, darwin]
+        os: [linux, darwin]
         arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
@@ -34,10 +34,10 @@ jobs:
           go-version-file: 'go.mod'
       - name: Build Binary
         run: |
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o nits-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }} .
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o nits-${{ matrix.os }}-${{ matrix.arch }} .
       - name: Upload Release Asset
         run: |
-          gh release upload Release "nits-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }}" --clobber
+          gh release upload Release "nits-${{ matrix.os }}-${{ matrix.arch }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
