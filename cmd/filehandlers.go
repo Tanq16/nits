@@ -24,9 +24,25 @@ var fileUnzipperCmd = &cobra.Command{
 	},
 }
 
+var fileJSONUniqueCmd = &cobra.Command{
+	Use:   "file-json-uniq <file>",
+	Short: "Remove duplicate items from a JSON slice based on a key",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		path, _ := cmd.Flags().GetString("path")
+		key, _ := cmd.Flags().GetString("key")
+		filehandlers.RunJSONUnique(args[0], path, key)
+	},
+}
+
 func init() {
 	fileOrganizerCmd.Flags().BoolP("dry-run", "r", false, "Check without changes")
 	fileUnzipperCmd.Flags().BoolP("uuid-names", "u", false, "Rename directories and files to UUIDs")
+	fileJSONUniqueCmd.Flags().StringP("path", "p", "", "Path to the slice in the JSON (e.g. 'references')")
+	fileJSONUniqueCmd.Flags().StringP("key", "k", "", "Key to use for uniqueness (e.g. 'url')")
+	fileJSONUniqueCmd.MarkFlagRequired("path")
+	fileJSONUniqueCmd.MarkFlagRequired("key")
 	rootCmd.AddCommand(fileOrganizerCmd)
 	rootCmd.AddCommand(fileUnzipperCmd)
+	rootCmd.AddCommand(fileJSONUniqueCmd)
 }
