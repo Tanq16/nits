@@ -7,7 +7,7 @@ import (
 
 var fileOrganizerCmd = &cobra.Command{
 	Use:   "file-organizer",
-	Short: "Organize files by grouping them into folders based on base name. eg. goku_1.jpg, goku_2.jpg -> goku/",
+	Short: "Group files into dirs based on base name. eg. goku_1.jpg, goku_2.jpg -> goku/",
 	Run: func(cmd *cobra.Command, args []string) {
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		filehandlers.RunFileOrganizer(dryRun)
