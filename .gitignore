@@ -1,2 +1,4 @@
 testdir
 nits
+internal/mermaidsvg/static/js/mermaid.min.js
+internal/mermaidsvg/static/js/tailwindcss.js
