@@ -9,6 +9,7 @@ import (
 
 func RunSetup() {
 	checkImageMagick()
+	checkFFProbe()
 }
 
 func checkImageMagick() {
@@ -53,5 +54,13 @@ func checkImageMagick() {
 		log.Info().Str("tool", "ImageMagick").Str("command", cmdName).Msg("ImageMagick is installed")
 	} else {
 		log.Error().Str("tool", "ImageMagick").Str("command", cmdName).Msg("ImageMagick is not installed")
+	}
+}
+
+func checkFFProbe() {
+	if _, err := exec.LookPath("ffprobe"); err == nil {
+		log.Info().Str("tool", "FFProbe").Msg("FFProbe is installed")
+	} else {
+		log.Error().Str("tool", "FFProbe").Msg("FFProbe is not installed")
 	}
 }

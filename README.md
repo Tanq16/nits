@@ -29,4 +29,5 @@ img-dedup      Find duplicate images in CWD using perceptual hashing
 img-webp       Compress all images in CWD to WebP format with quality optimization
 playground     Playground command for testing
 setup          Check if required tools are installed
+video-info     Display detailed information about a video file using ffprobe
 ```
