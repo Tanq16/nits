@@ -1,18 +1,42 @@
 package setup
 
 import (
+	"fmt"
 	"os/exec"
 	"runtime"
 
 	"github.com/rs/zerolog/log"
+	"github.com/tanq16/nits/internal/utils"
 )
 
-func RunSetup() {
-	checkImageMagick()
-	checkFFProbe()
+type ToolStatus struct {
+	Name    string
+	Command string
+	Found   bool
 }
 
-func checkImageMagick() {
+func RunSetup() {
+	imStatus := checkImageMagick()
+	ffStatus := checkFFProbe()
+
+	if imStatus.Found {
+		utils.PrintSuccess(fmt.Sprintf("ImageMagick is installed (%s)", imStatus.Command))
+		log.Debug().Str("package", "setup").Str("tool", "ImageMagick").Str("command", imStatus.Command).Msg("Tool check")
+	} else {
+		utils.PrintError(fmt.Sprintf("ImageMagick is not installed (expected: %s)", imStatus.Command), nil)
+		log.Debug().Str("package", "setup").Str("tool", "ImageMagick").Str("command", imStatus.Command).Msg("Tool missing")
+	}
+
+	if ffStatus.Found {
+		utils.PrintSuccess("FFProbe is installed")
+		log.Debug().Str("package", "setup").Str("tool", "FFProbe").Msg("Tool check")
+	} else {
+		utils.PrintError("FFProbe is not installed", nil)
+		log.Debug().Str("package", "setup").Str("tool", "FFProbe").Msg("Tool missing")
+	}
+}
+
+func checkImageMagick() ToolStatus {
 	var cmdName string
 	var found bool
 	switch runtime.GOOS {
@@ -50,17 +74,10 @@ func checkImageMagick() {
 			found = false
 		}
 	}
-	if found {
-		log.Info().Str("tool", "ImageMagick").Str("command", cmdName).Msg("ImageMagick is installed")
-	} else {
-		log.Error().Str("tool", "ImageMagick").Str("command", cmdName).Msg("ImageMagick is not installed")
-	}
+	return ToolStatus{Name: "ImageMagick", Command: cmdName, Found: found}
 }
 
-func checkFFProbe() {
-	if _, err := exec.LookPath("ffprobe"); err == nil {
-		log.Info().Str("tool", "FFProbe").Msg("FFProbe is installed")
-	} else {
-		log.Error().Str("tool", "FFProbe").Msg("FFProbe is not installed")
-	}
+func checkFFProbe() ToolStatus {
+	_, err := exec.LookPath("ffprobe")
+	return ToolStatus{Name: "FFProbe", Command: "ffprobe", Found: err == nil}
 }

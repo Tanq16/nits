@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 type FFProbeOutput struct {
@@ -46,7 +44,7 @@ type Tags struct {
 	BPS      string `json:"BPS,omitempty"`
 }
 
-func RunVideoInfo(inputFile string) {
+func RunVideoInfo(inputFile string) error {
 	cmd := exec.Command("ffprobe",
 		"-v", "quiet",
 		"-print_format", "json",
@@ -57,16 +55,17 @@ func RunVideoInfo(inputFile string) {
 
 	output, err := cmd.Output()
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to run ffprobe")
+		return fmt.Errorf("failed to run ffprobe: %w", err)
 	}
 
 	var data FFProbeOutput
 	if err := json.Unmarshal(output, &data); err != nil {
-		log.Fatal().Err(err).Msg("Failed to parse ffprobe output")
+		return fmt.Errorf("failed to parse ffprobe output: %w", err)
 	}
 
 	printOverview(data.Format)
 	printStreams(data.Streams)
+	return nil
 }
 
 func printOverview(f Format) {

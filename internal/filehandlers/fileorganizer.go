@@ -1,12 +1,14 @@
 package filehandlers
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/rs/zerolog/log"
+	"github.com/tanq16/nits/internal/utils"
 )
 
 func RunFileOrganizer(dryRun bool) {
@@ -44,7 +46,8 @@ func RunFileOrganizer(dryRun bool) {
 			movedCount++
 		}
 	}
-	log.Info().Int("folders", len(filteredGroups)).Int("files", movedCount).Msg("Organized files")
+	utils.PrintSuccess(fmt.Sprintf("Organized %d files into %d folders", movedCount, len(filteredGroups)))
+	log.Debug().Str("package", "filehandlers").Int("folders", len(filteredGroups)).Int("files", movedCount).Msg("Organized")
 }
 
 func extractBaseName(filename string) string {
@@ -58,15 +61,16 @@ func extractBaseName(filename string) string {
 }
 
 func dryRunMode(groups map[string][]string) {
-	log.Info().Int("groups", len(groups)).Msg("Found groups to create")
+	utils.PrintInfo(fmt.Sprintf("Found %d groups to create", len(groups)))
 	for base, files := range groups {
-		log.Info().Str("folder", base).Int("files", len(files)).Msg("Would create folder")
+		utils.PrintGeneric(fmt.Sprintf("  %s/ (%d files)", base, len(files)))
 		displayCount := min(len(files), 5)
 		for i := range displayCount {
-			log.Info().Str("file", files[i]).Msg("  Would move")
+			utils.PrintGeneric(fmt.Sprintf("    - %s", files[i]))
 		}
 		if len(files) > displayCount {
-			log.Info().Int("remaining", len(files)-displayCount).Msg("  ... and more")
+			utils.PrintGeneric(fmt.Sprintf("    ... and %d more", len(files)-displayCount))
 		}
 	}
+	log.Debug().Str("package", "filehandlers").Int("groups", len(groups)).Msg("Dry run")
 }

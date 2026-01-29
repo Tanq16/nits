@@ -10,28 +10,28 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func RunJSONUnique(targetFile, path, key string) {
+func RunJSONUnique(targetFile, path, key string) error {
 	absPath, _ := filepath.Abs(targetFile)
 	data, err := os.ReadFile(absPath)
 	if err != nil {
-		log.Error().Err(err).Str("file", targetFile).Msg("Failed to read file")
-		return
+		log.Debug().Str("package", "filehandlers").Err(err).Str("file", targetFile).Msg("Failed to read file")
+		return fmt.Errorf("failed to read file: %w", err)
 	}
 	var root map[string]any
 	if err := json.Unmarshal(data, &root); err != nil {
-		log.Error().Err(err).Str("file", targetFile).Msg("Failed to parse JSON")
-		return
+		log.Debug().Str("package", "filehandlers").Err(err).Str("file", targetFile).Msg("Failed to parse JSON")
+		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
 	pathParts := strings.Split(path, ".")
 	value, exists := getNestedValue(root, pathParts)
 	if !exists {
-		log.Error().Str("path", path).Msg("Path not found in JSON")
-		return
+		log.Debug().Str("package", "filehandlers").Str("path", path).Msg("Path not found")
+		return fmt.Errorf("path '%s' not found in JSON", path)
 	}
 	slice, ok := value.([]any)
 	if !ok {
-		log.Error().Str("path", path).Msg("Path does not point to a slice")
-		return
+		log.Debug().Str("package", "filehandlers").Str("path", path).Msg("Path not a slice")
+		return fmt.Errorf("path '%s' does not point to a slice", path)
 	}
 	keyParts := strings.Split(key, ".")
 	seen := make(map[string]bool)
@@ -56,14 +56,15 @@ func RunJSONUnique(targetFile, path, key string) {
 	setNestedValue(root, pathParts, unique)
 	output, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal JSON")
-		return
+		log.Debug().Str("package", "filehandlers").Err(err).Msg("Failed to marshal JSON")
+		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 	if err := os.WriteFile(absPath, output, 0644); err != nil {
-		log.Error().Err(err).Str("file", targetFile).Msg("Failed to write file")
-		return
+		log.Debug().Str("package", "filehandlers").Err(err).Str("file", targetFile).Msg("Failed to write file")
+		return fmt.Errorf("failed to write file: %w", err)
 	}
-	log.Info().Int("original", len(slice)).Int("unique", len(unique)).Msg("JSON deduplicated")
+	log.Debug().Str("package", "filehandlers").Int("original", len(slice)).Int("unique", len(unique)).Msg("Deduplicated")
+	return nil
 }
 
 func getNestedValue(obj map[string]any, parts []string) (any, bool) {

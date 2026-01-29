@@ -1,11 +1,12 @@
 package cmd
 
 import (
-	"os"
+	"fmt"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/tanq16/nits/internal/mermaidsvg"
+	"github.com/tanq16/nits/internal/utils"
 )
 
 var mermaidSvgCmd = &cobra.Command{
@@ -16,11 +17,11 @@ var mermaidSvgCmd = &cobra.Command{
 		port, _ := cmd.Flags().GetString("port")
 		addr := ":" + port
 
-		log.Info().Str("addr", "http://localhost"+addr).Msg("Starting Mermaid SVG server")
+		utils.PrintInfo(fmt.Sprintf("Starting Mermaid SVG server on http://localhost%s", addr))
+		log.Debug().Str("package", "cmd").Str("addr", "http://localhost"+addr).Msg("Starting server")
 
 		if err := mermaidsvg.Run(addr); err != nil {
-			log.Error().Err(err).Msg("Server failed")
-			os.Exit(1)
+			utils.PrintFatal("Server failed", err)
 		}
 	},
 }

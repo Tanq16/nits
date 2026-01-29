@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/tanq16/nits/internal/filehandlers"
+	"github.com/tanq16/nits/internal/utils"
 )
 
 var fileOrganizerCmd = &cobra.Command{
@@ -31,7 +34,10 @@ var fileJSONUniqueCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		path, _ := cmd.Flags().GetString("path")
 		key, _ := cmd.Flags().GetString("key")
-		filehandlers.RunJSONUnique(args[0], path, key)
+		if err := filehandlers.RunJSONUnique(args[0], path, key); err != nil {
+			utils.PrintFatal("Failed to deduplicate JSON", err)
+		}
+		utils.PrintSuccess(fmt.Sprintf("Deduplicated %s", args[0]))
 	},
 }
 
