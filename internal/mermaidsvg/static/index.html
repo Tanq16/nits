@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mermaid Preview</title>
+    <script src="/static/js/tailwindcss.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'rosewater': 'var(--rosewater)', 'flamingo': 'var(--flamingo)',
+                        'pink': 'var(--pink)', 'mauve': 'var(--mauve)',
+                        'red': 'var(--red)', 'maroon': 'var(--maroon)',
+                        'peach': 'var(--peach)', 'yellow': 'var(--yellow)',
+                        'green': 'var(--green)', 'teal': 'var(--teal)',
+                        'sky': 'var(--sky)', 'sapphire': 'var(--sapphire)',
+                        'blue': 'var(--blue)', 'lavender': 'var(--lavender)',
+                        'text': 'var(--text)', 'subtext1': 'var(--subtext1)',
+                        'subtext0': 'var(--subtext0)', 'overlay2': 'var(--overlay2)',
+                        'overlay1': 'var(--overlay1)', 'overlay0': 'var(--overlay0)',
+                        'surface2': 'var(--surface2)', 'surface1': 'var(--surface1)',
+                        'surface0': 'var(--surface0)', 'base': 'var(--base)',
+                        'mantle': 'var(--mantle)', 'crust': 'var(--crust)'
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        :root {
+            --rosewater: #f5e0dc; --flamingo: #f2cdcd; --pink: #f5c2e7;
+            --mauve: #cba6f7; --red: #f38ba8; --maroon: #eba0ac;
+            --peach: #fab387; --yellow: #f9e2af; --green: #a6e3a1;
+            --teal: #94e2d5; --sky: #89dceb; --sapphire: #74c7ec;
+            --blue: #89b4fa; --lavender: #b4befe; --text: #cdd6f4;
+            --subtext1: #bac2de; --subtext0: #a6adc8; --overlay2: #9399b2;
+            --overlay1: #7f849c; --overlay0: #6c7086; --surface2: #585b70;
+            --surface1: #45475a; --surface0: #313244; --base: #1e1e2e;
+            --mantle: #181825; --crust: #11111b;
+        }
+        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        textarea { resize: none; }
+    </style>
+    <script src="/static/js/mermaid.min.js"></script>
+</head>
+<body class="bg-base text-text min-h-screen">
+    <div class="min-h-screen flex flex-col">
+        <header class="flex items-center justify-between px-4 py-2 border-b border-surface1 h-12">
+            <div class="text-sm text-subtext1">Mermaid to SVG/PNG</div>
+            <div class="flex items-center gap-2">
+                <button id="toggle-bg" class="text-xs px-3 py-1 rounded-md bg-surface0 border border-surface1 hover:bg-surface1">Black</button>
+                <button id="preview-btn" class="text-xs px-3 py-1 rounded-md bg-blue text-crust hover:opacity-90">Preview</button>
+                <button id="download-btn" class="text-xs px-3 py-1 rounded-md bg-surface0 border border-surface1 hover:bg-surface1">Download SVG</button>
+            </div>
+        </header>
+        <main class="p-3 h-[calc(100vh-3rem)]">
+            <div class="h-full">
+                <textarea id="mermaid-input" class="w-full h-full p-3 rounded-md bg-surface0 text-text border border-surface1 focus:outline-none focus:ring-2 focus:ring-blue overflow-auto resize-none" spellcheck="false">
+flowchart LR
+  A[User] --> B[Paste Mermaid]
+  B --> C[Preview]
+  C --> D{Background}
+  D -->|Black| E[Render Dark]
+  D -->|White| F[Render Light]
+  E --> G[Download PNG]
+  F --> G
+                </textarea>
+                <div id="preview-wrapper" class="w-full h-full rounded-md border border-surface1 bg-black p-3 overflow-hidden hidden">
+                    <div id="preview" class="w-full h-full flex items-center justify-center"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const input = document.getElementById('mermaid-input');
+        const previewBtn = document.getElementById('preview-btn');
+        const toggleBtn = document.getElementById('toggle-bg');
+        const downloadBtn = document.getElementById('download-btn');
+        const previewWrapper = document.getElementById('preview-wrapper');
+        const preview = document.getElementById('preview');
+
+        let useDarkBg = true;
+        let renderCount = 0;
+        let showPreview = false;
+
+        function setBackground() {
+            previewWrapper.classList.toggle('bg-black', useDarkBg);
+            previewWrapper.classList.toggle('bg-white', !useDarkBg);
+            toggleBtn.textContent = useDarkBg ? 'Black' : 'White';
+        }
+
+        function showError(message) {
+            preview.innerHTML = '';
+            const pre = document.createElement('pre');
+            pre.className = 'text-red text-sm whitespace-pre-wrap';
+            pre.textContent = message;
+            preview.appendChild(pre);
+        }
+
+        function setMode(isPreview) {
+            showPreview = isPreview;
+            input.classList.toggle('hidden', showPreview);
+            previewWrapper.classList.toggle('hidden', !showPreview);
+            previewBtn.textContent = showPreview ? 'Edit' : 'Preview';
+        }
+
+        function fitSvg(svgElement) {
+            if (!svgElement) return;
+            if (!svgElement.getAttribute('viewBox')) {
+                try {
+                    const bbox = svgElement.getBBox();
+                    if (bbox.width > 0 && bbox.height > 0) {
+                        svgElement.setAttribute('viewBox', `0 0 ${bbox.width} ${bbox.height}`);
+                    }
+                } catch (_) {
+                    // If getBBox fails, keep existing attributes.
+                }
+            }
+            svgElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            svgElement.setAttribute('width', '100%');
+            svgElement.setAttribute('height', '100%');
+            svgElement.style.maxWidth = '100%';
+            svgElement.style.maxHeight = '100%';
+            svgElement.style.width = '100%';
+            svgElement.style.height = '100%';
+        }
+
+        async function renderDiagram() {
+            const code = input.value.trim();
+            if (!code) {
+                showError('No Mermaid code to render.');
+                return;
+            }
+
+            const theme = useDarkBg ? 'dark' : 'default';
+            mermaid.initialize({
+                startOnLoad: false,
+                securityLevel: 'loose',
+                theme,
+                htmlLabels: false
+            });
+
+            try {
+                const { svg } = await mermaid.render(`mermaid-${renderCount++}`, code);
+                preview.innerHTML = svg;
+                const svgElement = preview.querySelector('svg');
+                fitSvg(svgElement);
+                setMode(true);
+            } catch (err) {
+                showError(err.message || String(err));
+            }
+        }
+
+        function downloadSvg() {
+            const svgElement = preview.querySelector('svg');
+            if (!svgElement) {
+                showError('Preview the diagram before downloading.');
+                return;
+            }
+
+            const cloned = svgElement.cloneNode(true);
+            cloned.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            const serializer = new XMLSerializer();
+            const svgString = serializer.serializeToString(cloned);
+            const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'diagram.svg';
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        previewBtn.addEventListener('click', () => {
+            if (showPreview) {
+                setMode(false);
+                return;
+            }
+            renderDiagram();
+        });
+        toggleBtn.addEventListener('click', () => {
+            useDarkBg = !useDarkBg;
+            setBackground();
+            renderDiagram();
+        });
+        downloadBtn.addEventListener('click', downloadSvg);
+
+        setBackground();
+        setMode(false);
+    </script>
+</body>
+</html>

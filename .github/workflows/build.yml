@@ -32,9 +32,12 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+      - name: Download Assets
+        run: make assets
       - name: Build Binary
         run: |
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -ldflags="-s -w" -o nits-${{ matrix.os }}-${{ matrix.arch }} .
+          VERSION=$(make version)
+          make build GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} VERSION=${VERSION}
       - name: Upload Release Asset
         run: |
           gh release upload Release "nits-${{ matrix.os }}-${{ matrix.arch }}" --clobber
