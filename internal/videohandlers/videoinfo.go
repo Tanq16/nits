@@ -1,8 +1,10 @@
 package videohandlers
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -72,19 +74,13 @@ func printOverview(f Format) {
 	sizeBytes, _ := strconv.ParseFloat(f.Size, 64)
 	durationSec, _ := strconv.ParseFloat(f.Duration, 64)
 	bitrate, _ := strconv.ParseFloat(f.BitRate, 64)
-
-	fmt.Println("========================================")
-	fmt.Printf(" FILE: %s\n", f.Filename)
-	fmt.Println("========================================")
 	fmt.Printf(" Container: %s  |  Size: %s  |  Duration: %s  |  Bitrate: %s\n",
 		f.FormatName, formatSize(sizeBytes), formatDuration(durationSec), formatBitrate(bitrate))
 	fmt.Println("")
 }
 
 func printStreams(streams []Stream) {
-	fmt.Println("STREAMS")
-	fmt.Println("----------------------------------------")
-
+	fmt.Println("STREAMS:")
 	for _, s := range streams {
 		switch s.CodecType {
 		case "video":
@@ -160,4 +156,120 @@ func parseFrameRate(fr string) string {
 		}
 	}
 	return fr
+}
+
+func RunVideoEncode(inputFile, outputFile, params string) error {
+	data, err := getVideoInfo(inputFile)
+	if err != nil {
+		return err
+	}
+
+	totalDurationSecs := 0.0
+	if data.Format.Duration != "" {
+		totalDurationSecs, _ = strconv.ParseFloat(data.Format.Duration, 64)
+	}
+
+	paramArgs := []string{}
+	if params != "" {
+		paramArgs = strings.Fields(params)
+	}
+
+	args := []string{"-i", inputFile}
+	args = append(args, paramArgs...)
+	args = append(args, outputFile, "-progress", "pipe:1", "-nostats", "-loglevel", "error", "-y")
+
+	cmd := exec.Command("ffmpeg", args...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line != "" {
+				fmt.Fprintf(os.Stderr, "\r\033[K%s\n", line)
+			}
+		}
+	}()
+
+	fmt.Printf("Encoding: %s -> %s\n", inputFile, outputFile)
+	if totalDurationSecs > 0 {
+		fmt.Printf("Duration: %s\n\n", formatDuration(totalDurationSecs))
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.Split(line, "=")
+
+		if len(parts) == 2 && parts[0] == "out_time_us" {
+			currentUs, _ := strconv.ParseFloat(parts[1], 64)
+			currentSecs := currentUs / 1000000.0
+
+			if totalDurationSecs > 0 {
+				percent := (currentSecs / totalDurationSecs) * 100
+				if percent > 100 {
+					percent = 100
+				}
+				drawProgressBar(percent, currentSecs, totalDurationSecs)
+			} else {
+				fmt.Printf("\rEncoding... %.1fs", currentSecs)
+			}
+		}
+	}
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Println()
+		return fmt.Errorf("ffmpeg encoding failed: %w", err)
+	}
+
+	fmt.Printf("\r\033[K✓ Encoding completed successfully\n")
+	return nil
+}
+
+func drawProgressBar(percent float64, current, total float64) {
+	width := 40
+	completed := int((percent / 100) * float64(width))
+	if completed > width {
+		completed = width
+	}
+
+	filled := strings.Repeat("━", completed)
+	empty := strings.Repeat(" ", width-completed)
+
+	fmt.Printf("\r[%s%s] %.1f%% (%.1fs / %.1fs)", filled, empty, percent, current, total)
+}
+
+func getVideoInfo(inputFile string) (*FFProbeOutput, error) {
+	cmd := exec.Command("ffprobe",
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_format",
+		"-show_streams",
+		inputFile,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run ffprobe: %w", err)
+	}
+
+	var data FFProbeOutput
+	if err := json.Unmarshal(output, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse ffprobe output: %w", err)
+	}
+
+	return &data, nil
 }

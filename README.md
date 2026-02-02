@@ -20,7 +20,7 @@ A more robust tool is [anbu](https://github.com/tanq16/anbu). As and when I find
 |----------|----------|-------------|
 | Files | `file-organizer`, `file-unzipper`, `file-json-uniq` | File management and organization utilities |
 | Images | `img-webp`, `img-dedup` | Image compression and duplicate detection |
-| Video | `video-info` | Video file analysis using ffprobe |
+| Video | `video-info`, `video-encode` | Video file analysis and encoding using ffmpeg |
 | Diagrams | `mermaid-svg` | Web interface for Mermaid diagram to SVG conversion |
 | System | `setup` | Check if required third-party tools are installed |
 
@@ -178,6 +178,32 @@ nits video-info <file>
 nits video-info movie.mp4
 ```
 
+#### `video-encode`
+
+Encode video files using ffmpeg with custom parameters.
+
+```bash
+nits video-encode --input <file> --output <file> [--params <ffmpeg-params>]
+```
+
+**Flags:**
+- `--input, -i` - Input video file (required)
+- `--output, -o` - Output video file (required)
+- `--params, -p` - FFmpeg encoding parameters (e.g., '-c:v libx264 -crf 23')
+
+**Examples:**
+
+```bash
+# Encode with H.264 codec
+nits video-encode -i input.mp4 -o output.mp4 -p "-c:v libx264 -crf 23"
+
+# Convert to different format
+nits video-encode -i input.mov -o output.webm -p "-c:v libvpx-vp9 -c:a libopus"
+
+# Copy video stream, encode audio only
+nits video-encode -i input.mp4 -o output.mp4 -p "-c:v copy -c:a aac -b:a 192k"
+```
+
 ### Diagrams
 
 #### `mermaid-svg`
@@ -219,5 +245,5 @@ nits setup
 - Use `--debug` flag with any command for verbose logging
 - The `mermaid-svg` command requires no external dependencies - assets are embedded
 - Image commands require ImageMagick (`convert` or `magick`)
-- Video commands require FFmpeg (`ffprobe`)
+- Video commands require FFmpeg (`ffprobe` and `ffmpeg`)
 - There is no versioning for this project - releases are updated continuously
