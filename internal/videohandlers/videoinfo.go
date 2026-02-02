@@ -198,7 +198,7 @@ func RunVideoEncode(inputFile, outputFile, params string) error {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			line := scanner.Text()
-			if line != "" {
+			if line != "" && isErrorLine(line) {
 				fmt.Fprintf(os.Stderr, "\r\033[K%s\n", line)
 			}
 		}
@@ -250,6 +250,17 @@ func drawProgressBar(percent float64, current, total float64) {
 	empty := strings.Repeat(" ", width-completed)
 
 	fmt.Printf("\r[%s%s] %.1f%% (%.1fs / %.1fs)", filled, empty, percent, current, total)
+}
+
+func isErrorLine(line string) bool {
+	line = strings.ToLower(line)
+	if strings.Contains(line, "[info]") || strings.Contains(line, "[warning]") {
+		return false
+	}
+	if strings.Contains(line, "error") || strings.Contains(line, "failed") || strings.Contains(line, "cannot") {
+		return true
+	}
+	return false
 }
 
 func getVideoInfo(inputFile string) (*FFProbeOutput, error) {
