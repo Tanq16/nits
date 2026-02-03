@@ -190,6 +190,7 @@ func RunVideoEncode(inputFile, outputFile, params string) error {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
+	startTime := time.Now()
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
@@ -204,11 +205,7 @@ func RunVideoEncode(inputFile, outputFile, params string) error {
 		}
 	}()
 
-	fmt.Printf("Encoding: %s -> %s\n", inputFile, outputFile)
-	if totalDurationSecs > 0 {
-		fmt.Printf("Duration: %s\n", formatDuration(totalDurationSecs))
-	}
-
+	fmt.Printf("Encoding: %s -> %s | Duration: %s\n", inputFile, outputFile, formatDuration(totalDurationSecs))
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -235,7 +232,7 @@ func RunVideoEncode(inputFile, outputFile, params string) error {
 		return fmt.Errorf("ffmpeg encoding failed: %w", err)
 	}
 
-	fmt.Printf("\r\033[K✓ Encoding completed successfully\n\n")
+	fmt.Printf("\r\033[KEncoding completed in %s\n\n", time.Since(startTime))
 	return nil
 }
 
