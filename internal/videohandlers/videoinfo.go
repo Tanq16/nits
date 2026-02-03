@@ -206,7 +206,7 @@ func RunVideoEncode(inputFile, outputFile, params string) error {
 
 	fmt.Printf("Encoding: %s -> %s\n", inputFile, outputFile)
 	if totalDurationSecs > 0 {
-		fmt.Printf("Duration: %s\n\n", formatDuration(totalDurationSecs))
+		fmt.Printf("Duration: %s\n", formatDuration(totalDurationSecs))
 	}
 
 	scanner := bufio.NewScanner(stdout)
@@ -235,16 +235,13 @@ func RunVideoEncode(inputFile, outputFile, params string) error {
 		return fmt.Errorf("ffmpeg encoding failed: %w", err)
 	}
 
-	fmt.Printf("\r\033[K✓ Encoding completed successfully\n")
+	fmt.Printf("\r\033[K✓ Encoding completed successfully\n\n")
 	return nil
 }
 
 func drawProgressBar(percent float64, current, total float64) {
 	width := 40
-	completed := int((percent / 100) * float64(width))
-	if completed > width {
-		completed = width
-	}
+	completed := min(int((percent/100)*float64(width)), width)
 
 	filled := strings.Repeat("━", completed)
 	empty := strings.Repeat(" ", width-completed)
