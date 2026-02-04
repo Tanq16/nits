@@ -195,14 +195,18 @@ func RunVideoEncode(inputFile, outputFile, params string) error {
 		return fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
 
+	errorChan := make(chan bool, 1)
 	go func() {
+		hasErrors := false
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line != "" && isErrorLine(line) {
+				hasErrors = true
 				fmt.Fprintf(os.Stderr, "\r\033[K%s\n", line)
 			}
 		}
+		errorChan <- hasErrors
 	}()
 
 	fmt.Printf("Encoding: %s -> %s | Duration: %s\n", inputFile, outputFile, formatDuration(totalDurationSecs))
@@ -227,9 +231,15 @@ func RunVideoEncode(inputFile, outputFile, params string) error {
 		}
 	}
 
-	if err := cmd.Wait(); err != nil {
+	cmdErr := cmd.Wait()
+	errorsDetected := <-errorChan
+
+	if cmdErr != nil || errorsDetected {
 		fmt.Println()
-		return fmt.Errorf("ffmpeg encoding failed: %w", err)
+		if cmdErr != nil {
+			return fmt.Errorf("ffmpeg encoding failed: %w", cmdErr)
+		}
+		return fmt.Errorf("encoding completed with errors (see messages above)")
 	}
 
 	fmt.Printf("\r\033[KEncoding completed in %s\n\n", time.Since(startTime))
