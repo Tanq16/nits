@@ -1,10 +1,8 @@
 package videohandlers
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -17,19 +15,25 @@ type FFProbeOutput struct {
 }
 
 type Stream struct {
-	Index         int    `json:"index"`
-	CodecType     string `json:"codec_type"`
-	CodecName     string `json:"codec_name"`
-	Width         int    `json:"width,omitempty"`
-	Height        int    `json:"height,omitempty"`
-	BitRate       string `json:"bit_rate,omitempty"`
-	AvgFrameRate  string `json:"avg_frame_rate,omitempty"`
-	RFrameRate    string `json:"r_frame_rate,omitempty"`
-	PixFmt        string `json:"pix_fmt,omitempty"`
-	Channels      int    `json:"channels,omitempty"`
-	ChannelLayout string `json:"channel_layout,omitempty"`
-	SampleRate    string `json:"sample_rate,omitempty"`
-	Tags          Tags   `json:"tags,omitempty"`
+	Index         int         `json:"index"`
+	CodecType     string      `json:"codec_type"`
+	CodecName     string      `json:"codec_name"`
+	Width         int         `json:"width,omitempty"`
+	Height        int         `json:"height,omitempty"`
+	BitRate       string      `json:"bit_rate,omitempty"`
+	AvgFrameRate  string      `json:"avg_frame_rate,omitempty"`
+	RFrameRate    string      `json:"r_frame_rate,omitempty"`
+	PixFmt        string      `json:"pix_fmt,omitempty"`
+	Channels      int         `json:"channels,omitempty"`
+	ChannelLayout string      `json:"channel_layout,omitempty"`
+	SampleRate    string      `json:"sample_rate,omitempty"`
+	Tags          Tags        `json:"tags,omitempty"`
+	Disposition   Disposition `json:"disposition"`
+}
+
+type Disposition struct {
+	Comment        int `json:"comment"`
+	VisualImpaired int `json:"visual_impaired"`
 }
 
 type Format struct {
@@ -156,115 +160,6 @@ func parseFrameRate(fr string) string {
 		}
 	}
 	return fr
-}
-
-func RunVideoEncode(inputFile, outputFile, params string) error {
-	data, err := getVideoInfo(inputFile)
-	if err != nil {
-		return err
-	}
-
-	totalDurationSecs := 0.0
-	if data.Format.Duration != "" {
-		totalDurationSecs, _ = strconv.ParseFloat(data.Format.Duration, 64)
-	}
-
-	paramArgs := []string{}
-	if params != "" {
-		paramArgs = strings.Fields(params)
-	}
-
-	args := []string{"-i", inputFile}
-	args = append(args, paramArgs...)
-	args = append(args, outputFile, "-progress", "pipe:1", "-nostats", "-loglevel", "error", "-y")
-
-	cmd := exec.Command("ffmpeg", args...)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-
-	startTime := time.Now()
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start ffmpeg: %w", err)
-	}
-
-	errorChan := make(chan bool, 1)
-	go func() {
-		hasErrors := false
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if line != "" && isErrorLine(line) {
-				hasErrors = true
-				fmt.Fprintf(os.Stderr, "\r\033[K%s\n", line)
-			}
-		}
-		errorChan <- hasErrors
-	}()
-
-	fmt.Printf("Encoding: %s -> %s | Duration: %s\n", inputFile, outputFile, formatDuration(totalDurationSecs))
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.Split(line, "=")
-
-		if len(parts) == 2 && parts[0] == "out_time_us" {
-			currentUs, _ := strconv.ParseFloat(parts[1], 64)
-			currentSecs := currentUs / 1000000.0
-
-			if totalDurationSecs > 0 {
-				percent := (currentSecs / totalDurationSecs) * 100
-				if percent > 100 {
-					percent = 100
-				}
-				drawProgressBar(percent, currentSecs, totalDurationSecs)
-			} else {
-				fmt.Printf("\rEncoding... %.1fs", currentSecs)
-			}
-		}
-	}
-
-	cmdErr := cmd.Wait()
-	errorsDetected := <-errorChan
-
-	if cmdErr != nil || errorsDetected {
-		fmt.Println()
-		if cmdErr != nil {
-			return fmt.Errorf("ffmpeg encoding failed: %w", cmdErr)
-		}
-		return fmt.Errorf("encoding completed with errors (see messages above)")
-	}
-
-	fmt.Printf("\r\033[KEncoding completed in %s\n\n", time.Since(startTime))
-	return nil
-}
-
-func drawProgressBar(percent float64, current, total float64) {
-	width := 40
-	completed := min(int((percent/100)*float64(width)), width)
-
-	filled := strings.Repeat("━", completed)
-	empty := strings.Repeat(" ", width-completed)
-
-	fmt.Printf("\r[%s%s] %.1f%% (%.1fs / %.1fs)", filled, empty, percent, current, total)
-}
-
-func isErrorLine(line string) bool {
-	line = strings.ToLower(line)
-	if strings.Contains(line, "[info]") || strings.Contains(line, "[warning]") {
-		return false
-	}
-	if strings.Contains(line, "error") || strings.Contains(line, "failed") || strings.Contains(line, "cannot") {
-		return true
-	}
-	return false
 }
 
 func getVideoInfo(inputFile string) (*FFProbeOutput, error) {

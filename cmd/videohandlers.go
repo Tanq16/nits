@@ -18,28 +18,33 @@ var videoInfoCmd = &cobra.Command{
 }
 
 var videoEncodeFlags struct {
-	input  string
-	output string
-	params string
+	quality      string
+	fpsDowngrade bool
 }
 
 var videoEncodeCmd = &cobra.Command{
-	Use:   "video-encode",
-	Short: "Encode video files using ffmpeg with custom parameters",
+	Use:   "video-encode <file>",
+	Short: "Smart encode video to H.265 with automatic stream selection",
+	Long: `Probes the input file, selects the best audio stream (rejecting commentary),
+keeps all subtitles, picks the right container (MP4 or MKV), and encodes
+video to libx265 with the chosen quality tier.
+
+Output file is generated automatically as <basename>.h265.<mp4|mkv>.`,
+	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		if videoEncodeFlags.input == "" || videoEncodeFlags.output == "" {
-			utils.PrintFatal("Input (-i) and Output (-o) flags are required", nil)
+		opts := videohandlers.SmartEncodeOptions{
+			Quality:      videoEncodeFlags.quality,
+			FPSDowngrade: videoEncodeFlags.fpsDowngrade,
 		}
-		if err := videohandlers.RunVideoEncode(videoEncodeFlags.input, videoEncodeFlags.output, videoEncodeFlags.params); err != nil {
+		if err := videohandlers.RunSmartEncode(args[0], opts); err != nil {
 			utils.PrintFatal("Failed to encode video", err)
 		}
 	},
 }
 
 func init() {
-	videoEncodeCmd.Flags().StringVarP(&videoEncodeFlags.input, "input", "i", "", "Input video file (required)")
-	videoEncodeCmd.Flags().StringVarP(&videoEncodeFlags.output, "output", "o", "", "Output video file (required)")
-	videoEncodeCmd.Flags().StringVarP(&videoEncodeFlags.params, "params", "p", "", "FFmpeg encoding parameters (e.g., '-c:v libx264 -crf 23')")
+	videoEncodeCmd.Flags().StringVarP(&videoEncodeFlags.quality, "quality", "q", "medium", "Quality tier: very-high, high, medium, low")
+	videoEncodeCmd.Flags().BoolVar(&videoEncodeFlags.fpsDowngrade, "fps-downgrade", false, "Downgrade framerate to 30 fps")
 
 	rootCmd.AddCommand(videoInfoCmd)
 	rootCmd.AddCommand(videoEncodeCmd)
