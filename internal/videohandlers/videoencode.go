@@ -88,17 +88,28 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 	if len(audioStreams) > 0 {
 		selectedIdx := selectAudioStream(audioStreams)
 		args = append(args, "-map", fmt.Sprintf("0:a:%d", selectedIdx))
-		audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2")
 
 		selected := audioStreams[selectedIdx]
+		alreadyAACStereo := selected.stream.CodecName == "aac" && selected.stream.Channels == 2
+
+		if alreadyAACStereo {
+			audioFlags = append(audioFlags, "-c:a", "copy")
+		} else {
+			audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2")
+		}
+
 		lang := selected.stream.Tags.Language
 		if lang == "" {
 			lang = "und"
 		}
+		action := "→ AAC stereo"
+		if alreadyAACStereo {
+			action = "→ copy (already AAC stereo)"
+		}
 		if selected.stream.Tags.Title != "" {
-			fmt.Printf("→ Audio: stream #%d (%s — %s) → AAC stereo\n", selected.stream.Index, lang, selected.stream.Tags.Title)
+			fmt.Printf("→ Audio: stream #%d (%s — %s) %s\n", selected.stream.Index, lang, selected.stream.Tags.Title, action)
 		} else {
-			fmt.Printf("→ Audio: stream #%d (%s) → AAC stereo\n", selected.stream.Index, lang)
+			fmt.Printf("→ Audio: stream #%d (%s) %s\n", selected.stream.Index, lang, action)
 		}
 	} else {
 		fmt.Println("→ Audio: none")

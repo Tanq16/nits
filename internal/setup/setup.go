@@ -17,7 +17,8 @@ type ToolStatus struct {
 
 func RunSetup() {
 	imStatus := checkImageMagick()
-	ffStatus := checkFFProbe()
+	ffProbeStatus := checkFFProbe()
+	ffmpegStatus := checkFFmpeg()
 
 	if imStatus.Found {
 		utils.PrintSuccess(fmt.Sprintf("ImageMagick is installed (%s)", imStatus.Command))
@@ -27,12 +28,20 @@ func RunSetup() {
 		log.Debug().Str("package", "setup").Str("tool", "ImageMagick").Str("command", imStatus.Command).Msg("Tool missing")
 	}
 
-	if ffStatus.Found {
+	if ffProbeStatus.Found {
 		utils.PrintSuccess("FFProbe is installed")
 		log.Debug().Str("package", "setup").Str("tool", "FFProbe").Msg("Tool check")
 	} else {
 		utils.PrintError("FFProbe is not installed", nil)
 		log.Debug().Str("package", "setup").Str("tool", "FFProbe").Msg("Tool missing")
+	}
+
+	if ffmpegStatus.Found {
+		utils.PrintSuccess("FFmpeg is installed")
+		log.Debug().Str("package", "setup").Str("tool", "FFmpeg").Msg("Tool check")
+	} else {
+		utils.PrintError("FFmpeg is not installed", nil)
+		log.Debug().Str("package", "setup").Str("tool", "FFmpeg").Msg("Tool missing")
 	}
 }
 
@@ -80,4 +89,9 @@ func checkImageMagick() ToolStatus {
 func checkFFProbe() ToolStatus {
 	_, err := exec.LookPath("ffprobe")
 	return ToolStatus{Name: "FFProbe", Command: "ffprobe", Found: err == nil}
+}
+
+func checkFFmpeg() ToolStatus {
+	_, err := exec.LookPath("ffmpeg")
+	return ToolStatus{Name: "FFmpeg", Command: "ffmpeg", Found: err == nil}
 }

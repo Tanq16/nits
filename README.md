@@ -180,28 +180,27 @@ nits video-info movie.mp4
 
 #### `video-encode`
 
-Encode video files using ffmpeg with custom parameters.
+Smart encode video to H.265 with automatic stream selection. Probes the input file, selects the best audio stream (rejecting commentary), keeps all subtitles, picks the right container (MP4 or MKV), and encodes video to libx265 with the chosen quality tier. Output file is generated automatically as `<basename>.h265.<mp4|mkv>`.
 
 ```bash
-nits video-encode --input <file> --output <file> [--params <ffmpeg-params>]
+nits video-encode <file> [--quality TIER] [--fps-downgrade]
 ```
 
 **Flags:**
-- `--input, -i` - Input video file (required)
-- `--output, -o` - Output video file (required)
-- `--params, -p` - FFmpeg encoding parameters (e.g., '-c:v libx264 -crf 23')
+- `--quality, -q` - Quality tier: very-high, high, medium, low (default: medium)
+- `--fps-downgrade` - Downgrade framerate to 30 fps
 
 **Examples:**
 
 ```bash
-# Encode with H.264 codec
-nits video-encode -i input.mp4 -o output.mp4 -p "-c:v libx264 -crf 23"
+# Encode with default medium quality
+nits video-encode movie.mkv
 
-# Convert to different format
-nits video-encode -i input.mov -o output.webm -p "-c:v libvpx-vp9 -c:a libopus"
+# Encode with high quality
+nits video-encode movie.mkv --quality high
 
-# Copy video stream, encode audio only
-nits video-encode -i input.mp4 -o output.mp4 -p "-c:v copy -c:a aac -b:a 192k"
+# Encode with FPS downgrade to 30
+nits video-encode movie.mkv --fps-downgrade
 ```
 
 ### Diagrams
@@ -233,7 +232,7 @@ Then open `http://localhost:8080` in your browser to use the diagram editor.
 
 #### `setup`
 
-Check if required third-party tools are installed (ImageMagick, ffprobe).
+Check if required third-party tools are installed (ImageMagick, ffprobe, ffmpeg).
 
 ```bash
 nits setup
@@ -246,4 +245,4 @@ nits setup
 - The `mermaid-svg` command requires no external dependencies - assets are embedded
 - Image commands require ImageMagick (`convert` or `magick`)
 - Video commands require FFmpeg (`ffprobe` and `ffmpeg`)
-- There is no versioning for this project - releases are updated continuously
+- Releases follow semantic versioning based on commit messages (`[major-release]`, `[minor-release]`)
