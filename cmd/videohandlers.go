@@ -20,6 +20,7 @@ var videoInfoCmd = &cobra.Command{
 var videoEncodeFlags struct {
 	quality      string
 	fpsDowngrade bool
+	noVideo      bool
 }
 
 var videoEncodeCmd = &cobra.Command{
@@ -35,6 +36,7 @@ Output file is generated automatically as <basename>.h265.<mp4|mkv>.`,
 		opts := videohandlers.SmartEncodeOptions{
 			Quality:      videoEncodeFlags.quality,
 			FPSDowngrade: videoEncodeFlags.fpsDowngrade,
+			NoVideo:      videoEncodeFlags.noVideo,
 		}
 		if err := videohandlers.RunSmartEncode(args[0], opts); err != nil {
 			utils.PrintFatal("Failed to encode video", err)
@@ -45,6 +47,7 @@ Output file is generated automatically as <basename>.h265.<mp4|mkv>.`,
 func init() {
 	videoEncodeCmd.Flags().StringVarP(&videoEncodeFlags.quality, "quality", "q", "medium", "Quality tier: very-high, high, medium, low")
 	videoEncodeCmd.Flags().BoolVar(&videoEncodeFlags.fpsDowngrade, "fps-downgrade", false, "Downgrade framerate to 30 fps")
+	videoEncodeCmd.Flags().BoolVarP(&videoEncodeFlags.noVideo, "no-video", "V", false, "Copy video stream as-is without re-encoding")
 
 	rootCmd.AddCommand(videoInfoCmd)
 	rootCmd.AddCommand(videoEncodeCmd)

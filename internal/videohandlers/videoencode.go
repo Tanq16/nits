@@ -15,6 +15,7 @@ import (
 type SmartEncodeOptions struct {
 	Quality      string
 	FPSDowngrade bool
+	NoVideo      bool
 }
 
 var qualityCRF = map[string]string{
@@ -68,19 +69,26 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 		crf = qualityCRF["medium"]
 	}
 
-	videoFlags := []string{"-c:v", "libx265", "-crf", crf}
+	var videoFlags []string
 
-	if videoStreams[0].stream.PixFmt == "yuv420p10le" {
-		videoFlags = append(videoFlags, "-pix_fmt", "yuv420p10le")
-		fmt.Println("→ 10-bit source detected, retaining pixel format")
+	if opts.NoVideo {
+		videoFlags = []string{"-c:v", "copy"}
+		fmt.Println("→ Video: copy (no re-encoding)")
+	} else {
+		videoFlags = []string{"-c:v", "libx265", "-crf", crf}
+
+		if videoStreams[0].stream.PixFmt == "yuv420p10le" {
+			videoFlags = append(videoFlags, "-pix_fmt", "yuv420p10le")
+			fmt.Println("→ 10-bit source detected, retaining pixel format")
+		}
+
+		if opts.FPSDowngrade {
+			videoFlags = append(videoFlags, "-r", "30")
+			fmt.Println("→ FPS downgrade to 30 enabled")
+		}
+
+		fmt.Printf("→ Video: libx265 CRF %s (%s quality)\n", crf, opts.Quality)
 	}
-
-	if opts.FPSDowngrade {
-		videoFlags = append(videoFlags, "-r", "30")
-		fmt.Println("→ FPS downgrade to 30 enabled")
-	}
-
-	fmt.Printf("→ Video: libx265 CRF %s (%s quality)\n", crf, opts.Quality)
 
 	var audioFlags []string
 	audioStreams := filterStreams(data.Streams, "audio")
@@ -90,21 +98,21 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 		args = append(args, "-map", fmt.Sprintf("0:a:%d", selectedIdx))
 
 		selected := audioStreams[selectedIdx]
-		alreadyAACStereo := selected.stream.CodecName == "aac" && selected.stream.Channels == 2
+		alreadyOptimal := selected.stream.CodecName == "aac" && selected.stream.Channels == 2 && selected.stream.SampleRate == "48000"
 
-		if alreadyAACStereo {
+		if alreadyOptimal {
 			audioFlags = append(audioFlags, "-c:a", "copy")
 		} else {
-			audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2")
+			audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2", "-ar", "48000")
 		}
 
 		lang := selected.stream.Tags.Language
 		if lang == "" {
 			lang = "und"
 		}
-		action := "→ AAC stereo"
-		if alreadyAACStereo {
-			action = "→ copy (already AAC stereo)"
+		action := "→ AAC stereo 48kHz"
+		if alreadyOptimal {
+			action = "→ copy (already AAC stereo 48kHz)"
 		}
 		if selected.stream.Tags.Title != "" {
 			fmt.Printf("→ Audio: stream #%d (%s — %s) %s\n", selected.stream.Index, lang, selected.stream.Tags.Title, action)
