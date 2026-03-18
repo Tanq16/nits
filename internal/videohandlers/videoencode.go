@@ -98,8 +98,7 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 		args = append(args, "-map", fmt.Sprintf("0:a:%d", selectedIdx))
 
 		selected := audioStreams[selectedIdx]
-		audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2", "-ar", "48000",
-			"-af", "aresample=first_pts=0")
+		audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2", "-ar", "48000")
 
 		lang := selected.stream.Tags.Language
 		if lang == "" {
