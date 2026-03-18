@@ -133,9 +133,11 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 	audioStreams := filterStreams(data.Streams, "audio")
 
 	if len(audioStreams) > 0 && tempAudioFile != "" {
-		// Use pre-processed 48kHz FLAC as second input (already resampled cleanly)
+		// Use pre-processed 48kHz FLAC as second input (already resampled cleanly).
+		// first_pts=0 anchors audio PTS to zero for A/V alignment; since the FLAC
+		// is already 48kHz, the resampler is a passthrough (no rate conversion).
 		args = append(args, "-map", "1:a:0")
-		audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2")
+		audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2", "-af", "aresample=osr=48000:first_pts=0")
 
 		selectedIdx := selectAudioStream(audioStreams)
 		selected := audioStreams[selectedIdx]
