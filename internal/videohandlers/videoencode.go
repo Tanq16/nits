@@ -75,7 +75,7 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 		videoFlags = []string{"-c:v", "copy"}
 		fmt.Println("→ Video: copy (no re-encoding)")
 	} else {
-		videoFlags = []string{"-c:v", "libx265", "-crf", crf}
+		videoFlags = []string{"-c:v", "libx265", "-crf", crf, "-fps_mode", "cfr"}
 
 		if videoStreams[0].stream.PixFmt == "yuv420p10le" {
 			videoFlags = append(videoFlags, "-pix_fmt", "yuv420p10le")
@@ -87,7 +87,7 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 			fmt.Println("→ FPS downgrade to 30 enabled")
 		}
 
-		fmt.Printf("→ Video: libx265 CRF %s (%s quality)\n", crf, opts.Quality)
+		fmt.Printf("→ Video: libx265 CRF %s (%s quality, CFR)\n", crf, opts.Quality)
 	}
 
 	var audioFlags []string
@@ -98,26 +98,19 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 		args = append(args, "-map", fmt.Sprintf("0:a:%d", selectedIdx))
 
 		selected := audioStreams[selectedIdx]
-		alreadyOptimal := selected.stream.CodecName == "aac" && selected.stream.Channels == 2 && selected.stream.SampleRate == "48000"
-
-		if alreadyOptimal {
-			audioFlags = append(audioFlags, "-c:a", "copy")
-		} else {
-			audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2", "-ar", "48000")
-		}
+		// Always re-encode audio to generate fresh timestamps from the encoder.
+		// Copying audio preserves source timestamp imprecisions that cause A/V
+		// drift in browsers (which lack real-time clock correction unlike VLC).
+		audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2", "-ar", "48000")
 
 		lang := selected.stream.Tags.Language
 		if lang == "" {
 			lang = "und"
 		}
-		action := "→ AAC stereo 48kHz"
-		if alreadyOptimal {
-			action = "→ copy (already AAC stereo 48kHz)"
-		}
 		if selected.stream.Tags.Title != "" {
-			fmt.Printf("→ Audio: stream #%d (%s — %s) %s\n", selected.stream.Index, lang, selected.stream.Tags.Title, action)
+			fmt.Printf("→ Audio: stream #%d (%s — %s) → AAC stereo 48kHz\n", selected.stream.Index, lang, selected.stream.Tags.Title)
 		} else {
-			fmt.Printf("→ Audio: stream #%d (%s) %s\n", selected.stream.Index, lang, action)
+			fmt.Printf("→ Audio: stream #%d (%s) → AAC stereo 48kHz\n", selected.stream.Index, lang)
 		}
 	} else {
 		fmt.Println("→ Audio: none")
@@ -159,6 +152,7 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 	args = append(args, videoFlags...)
 	args = append(args, audioFlags...)
 	args = append(args, subtitleFlags...)
+	args = append(args, "-avoid_negative_ts", "make_zero")
 	args = append(args, outputFile)
 
 	fmt.Printf("→ Output: %s\n", outputFile)
