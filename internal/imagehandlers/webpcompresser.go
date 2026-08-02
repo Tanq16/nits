@@ -1,6 +1,7 @@
 package imagehandlers
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,12 +12,16 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog/log"
+	"github.com/tanq16/nits/utils"
 )
 
-func RunImgWebp(dryRun bool, workers int) {
+func RunImgWebp(ctx context.Context, dryRun bool, workers int) error {
 	path := "."
 	extensions := []string{".jpg", ".jpeg", ".png", ".tiff"}
-	entries, _ := os.ReadDir(path)
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return fmt.Errorf("failed to read directory: %w", err)
+	}
 	var paths []string
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -29,7 +34,8 @@ func RunImgWebp(dryRun bool, workers int) {
 		paths = append(paths, filepath.Join(path, entry.Name()))
 	}
 	if len(paths) == 0 {
-		return
+		utils.PrintInfo("No images found")
+		return nil
 	}
 
 	stats := map[string]int64{
@@ -51,10 +57,14 @@ func RunImgWebp(dryRun bool, workers int) {
 	pathChan := make(chan string, len(paths))
 	var wg sync.WaitGroup
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for inputPath := range pathChan {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
 				filename := filepath.Base(inputPath)
 				ext := strings.ToLower(filepath.Ext(filename))
 				origSize := getFileSize(inputPath)
@@ -69,10 +79,10 @@ func RunImgWebp(dryRun bool, workers int) {
 				originalFiles = append(originalFiles, filename)
 				filesMutex.Unlock()
 
-				exec.Command(magickCmd, inputPath, "-quality", "98", webpPath).Run()
+				exec.CommandContext(ctx, magickCmd, inputPath, "-quality", "98", webpPath).Run()
 				webpSize := getFileSize(webpPath)
 				if webpSize >= origSize {
-					exec.Command(magickCmd, inputPath, "-quality", "95", webpPath).Run()
+					exec.CommandContext(ctx, magickCmd, inputPath, "-quality", "95", webpPath).Run()
 					statsMutex.Lock()
 					stats["quality_95"]++
 					statsMutex.Unlock()
@@ -86,7 +96,7 @@ func RunImgWebp(dryRun bool, workers int) {
 				if webpSize > 190*1024 {
 					resizedThisFile := false
 					for scale := 90; scale >= 60; scale -= 10 {
-						exec.Command(magickCmd, webpPath, "-resize", fmt.Sprintf("%d%%", scale), tempWebp).Run()
+						exec.CommandContext(ctx, magickCmd, webpPath, "-resize", fmt.Sprintf("%d%%", scale), tempWebp).Run()
 						newSize := getFileSize(tempWebp)
 						resizedThisFile = true
 						if newSize <= 190*1024 || scale == 60 {
@@ -126,34 +136,41 @@ func RunImgWebp(dryRun bool, workers int) {
 					os.Remove(inputPath)
 				}
 			}
-		}()
+		})
 	}
-	for _, path := range paths {
-		pathChan <- path
+	for _, p := range paths {
+		pathChan <- p
 	}
 	close(pathChan)
 	wg.Wait()
 
-	if dryRun {
-		os.WriteFile("to-delete.txt", []byte(strings.Join(originalFiles, "\n")), 0644)
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
-	fmt.Println("CONVERSION STATISTICS")
-	fmt.Printf("Total images processed:      %d\n", stats["processed"])
-	fmt.Printf("Retained with Quality 98:    %d\n", stats["quality_98"])
-	fmt.Printf("Fallback to Quality 95:      %d\n", stats["quality_95"])
-	fmt.Printf("Images requiring Resizing:   %d\n", stats["resized"])
-	fmt.Printf("Final WebP <= 190 KB:        %d\n", stats["final_under_190"])
-	fmt.Printf("Final WebP > 190 KB:         %d\n", stats["final_over_190"])
-	fmt.Printf("Total storage space saved:   %.2f MB\n", float64(stats["total_saved_bytes"])/1024/1024)
-
 	if dryRun {
-		fmt.Println("\nDRY RUN LOGS")
-		for _, log := range detailedLogs {
-			fmt.Println(log)
+		if err := os.WriteFile("to-delete.txt", []byte(strings.Join(originalFiles, "\n")), 0644); err != nil {
+			return fmt.Errorf("failed to write to-delete.txt: %w", err)
 		}
-		log.Info().Str("filename", "to-delete.txt").Msg("Original filenames saved")
 	}
+
+	utils.PrintInfo("Conversion statistics")
+	utils.PrintGeneric(fmt.Sprintf("Total images processed:      %d", stats["processed"]))
+	utils.PrintGeneric(fmt.Sprintf("Retained with Quality 98:    %d", stats["quality_98"]))
+	utils.PrintGeneric(fmt.Sprintf("Fallback to Quality 95:      %d", stats["quality_95"]))
+	utils.PrintGeneric(fmt.Sprintf("Images requiring Resizing:   %d", stats["resized"]))
+	utils.PrintGeneric(fmt.Sprintf("Final WebP <= 190 KB:        %d", stats["final_under_190"]))
+	utils.PrintGeneric(fmt.Sprintf("Final WebP > 190 KB:         %d", stats["final_over_190"]))
+	utils.PrintGeneric(fmt.Sprintf("Total storage space saved:   %.2f MB", float64(stats["total_saved_bytes"])/1024/1024))
+
+	if dryRun {
+		utils.PrintInfo("Dry run logs")
+		for _, entry := range detailedLogs {
+			utils.PrintGeneric(entry)
+		}
+		log.Debug().Str("filename", "to-delete.txt").Msg("Original filenames saved")
+	}
+	return nil
 }
 
 func getFileSize(path string) int64 {

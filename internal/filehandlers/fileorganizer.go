@@ -7,13 +7,21 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/rs/zerolog/log"
-	"github.com/tanq16/nits/internal/utils"
+	"github.com/tanq16/nits/utils"
 )
 
-func RunFileOrganizer(dryRun bool) {
-	currentDir, _ := os.Getwd()
-	entries, _ := os.ReadDir(currentDir)
+// RunFileOrganizer groups files in the current directory into subdirectories
+// by shared base name. It returns the number of files moved and the number
+// of folders created (or that would be created, in dry-run mode).
+func RunFileOrganizer(dryRun bool) (movedCount int, folderCount int, err error) {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get current directory: %w", err)
+	}
+	entries, err := os.ReadDir(currentDir)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to read directory: %w", err)
+	}
 	groups := make(map[string][]string)
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -33,21 +41,24 @@ func RunFileOrganizer(dryRun bool) {
 	}
 	if dryRun {
 		dryRunMode(filteredGroups)
-		return
+		return 0, len(filteredGroups), nil
 	}
-	movedCount := 0
 	for base, files := range filteredGroups {
 		basePath := filepath.Join(currentDir, base)
-		os.MkdirAll(basePath, 0755)
+		if err := os.MkdirAll(basePath, 0755); err != nil {
+			return movedCount, folderCount, fmt.Errorf("failed to create directory %s: %w", basePath, err)
+		}
 		for _, filename := range files {
 			srcPath := filepath.Join(currentDir, filename)
 			dstPath := filepath.Join(basePath, filename)
-			os.Rename(srcPath, dstPath)
+			if err := os.Rename(srcPath, dstPath); err != nil {
+				return movedCount, folderCount, fmt.Errorf("failed to move %s: %w", filename, err)
+			}
 			movedCount++
 		}
+		folderCount++
 	}
-	utils.PrintSuccess(fmt.Sprintf("Organized %d files into %d folders", movedCount, len(filteredGroups)))
-	log.Debug().Str("package", "filehandlers").Int("folders", len(filteredGroups)).Int("files", movedCount).Msg("Organized")
+	return movedCount, folderCount, nil
 }
 
 func extractBaseName(filename string) string {
@@ -72,5 +83,4 @@ func dryRunMode(groups map[string][]string) {
 			utils.PrintGeneric(fmt.Sprintf("    ... and %d more", len(files)-displayCount))
 		}
 	}
-	log.Debug().Str("package", "filehandlers").Int("groups", len(groups)).Msg("Dry run")
 }

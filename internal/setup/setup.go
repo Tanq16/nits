@@ -6,7 +6,7 @@ import (
 	"runtime"
 
 	"github.com/rs/zerolog/log"
-	"github.com/tanq16/nits/internal/utils"
+	"github.com/tanq16/nits/utils"
 )
 
 type ToolStatus struct {
@@ -22,26 +22,26 @@ func RunSetup() {
 
 	if imStatus.Found {
 		utils.PrintSuccess(fmt.Sprintf("ImageMagick is installed (%s)", imStatus.Command))
-		log.Debug().Str("package", "setup").Str("tool", "ImageMagick").Str("command", imStatus.Command).Msg("Tool check")
+		log.Debug().Str("tool", "ImageMagick").Str("command", imStatus.Command).Msg("Tool check")
 	} else {
 		utils.PrintError(fmt.Sprintf("ImageMagick is not installed (expected: %s)", imStatus.Command), nil)
-		log.Debug().Str("package", "setup").Str("tool", "ImageMagick").Str("command", imStatus.Command).Msg("Tool missing")
+		log.Debug().Str("tool", "ImageMagick").Str("command", imStatus.Command).Msg("Tool missing")
 	}
 
 	if ffProbeStatus.Found {
 		utils.PrintSuccess("FFProbe is installed")
-		log.Debug().Str("package", "setup").Str("tool", "FFProbe").Msg("Tool check")
+		log.Debug().Str("tool", "FFProbe").Msg("Tool check")
 	} else {
 		utils.PrintError("FFProbe is not installed", nil)
-		log.Debug().Str("package", "setup").Str("tool", "FFProbe").Msg("Tool missing")
+		log.Debug().Str("tool", "FFProbe").Msg("Tool missing")
 	}
 
 	if ffmpegStatus.Found {
 		utils.PrintSuccess("FFmpeg is installed")
-		log.Debug().Str("package", "setup").Str("tool", "FFmpeg").Msg("Tool check")
+		log.Debug().Str("tool", "FFmpeg").Msg("Tool check")
 	} else {
 		utils.PrintError("FFmpeg is not installed", nil)
-		log.Debug().Str("package", "setup").Str("tool", "FFmpeg").Msg("Tool missing")
+		log.Debug().Str("tool", "FFmpeg").Msg("Tool missing")
 	}
 }
 

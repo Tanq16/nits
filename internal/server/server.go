@@ -1,4 +1,4 @@
-package mermaidsvg
+package server
 
 import (
 	"embed"
@@ -57,6 +57,6 @@ func Run(addr string) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("INFO [mermaidsvg] Listening on http://localhost%s", addr)
+	log.Printf("INFO [server] Listening on http://localhost%s", addr)
 	return server.ListenAndServe()
 }

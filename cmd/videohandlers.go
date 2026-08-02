@@ -1,9 +1,14 @@
 package cmd
 
 import (
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/spf13/cobra"
-	"github.com/tanq16/nits/internal/utils"
 	"github.com/tanq16/nits/internal/videohandlers"
+	"github.com/tanq16/nits/utils"
 )
 
 var videoInfoCmd = &cobra.Command{
@@ -33,12 +38,15 @@ video to libx265 with the chosen quality tier.
 Output file is generated automatically as <basename>.h265.<mp4|mkv>.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
 		opts := videohandlers.SmartEncodeOptions{
 			Quality:      videoEncodeFlags.quality,
 			FPSDowngrade: videoEncodeFlags.fpsDowngrade,
 			NoVideo:      videoEncodeFlags.noVideo,
 		}
-		if err := videohandlers.RunSmartEncode(args[0], opts); err != nil {
+		if err := videohandlers.RunSmartEncode(ctx, args[0], opts); err != nil {
 			utils.PrintFatal("Failed to encode video", err)
 		}
 	},

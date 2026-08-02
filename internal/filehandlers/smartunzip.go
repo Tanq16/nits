@@ -2,6 +2,7 @@ package filehandlers
 
 import (
 	"archive/zip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,9 +12,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func RunFileUnzipper(uuidNames bool) {
-	currentDir, _ := os.Getwd()
-	entries, _ := os.ReadDir(currentDir)
+func RunFileUnzipper(uuidNames bool) error {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+	entries, err := os.ReadDir(currentDir)
+	if err != nil {
+		return fmt.Errorf("failed to read directory: %w", err)
+	}
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -28,12 +35,17 @@ func RunFileUnzipper(uuidNames bool) {
 		}
 		basePath := filepath.Join(currentDir, base)
 		log.Info().Str("zip", name).Str("directory", base).Msg("Processing zip file")
-		os.MkdirAll(basePath, 0755)
+		if err := os.MkdirAll(basePath, 0755); err != nil {
+			log.Error().Err(err).Str("zip", name).Msg("Failed to create directory")
+			continue
+		}
 		zipPath := filepath.Join(currentDir, name)
 		newZipPath := filepath.Join(basePath, name)
-		os.Rename(zipPath, newZipPath)
-		err := extractZip(newZipPath, basePath)
-		if err != nil {
+		if err := os.Rename(zipPath, newZipPath); err != nil {
+			log.Error().Err(err).Str("zip", name).Msg("Failed to move zip file")
+			continue
+		}
+		if err := extractZip(newZipPath, basePath); err != nil {
 			log.Error().Err(err).Str("zip", name).Msg("Failed to extract zip file")
 			continue
 		}
@@ -60,6 +72,7 @@ func RunFileUnzipper(uuidNames bool) {
 			}
 		}
 	}
+	return nil
 }
 
 func extractZip(zipPath, destDir string) error {
