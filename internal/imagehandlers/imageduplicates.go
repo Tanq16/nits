@@ -1,6 +1,7 @@
 package imagehandlers
 
 import (
+	"context"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/corona10/goimagehash"
 	"github.com/rs/zerolog/log"
+	"github.com/tanq16/nits/utils"
 	_ "golang.org/x/image/webp"
 )
 
@@ -25,28 +27,30 @@ type ImageInfo struct {
 	Area     int
 }
 
-func RunImgDedupe(maxHammingDistance int, workers int) {
+func RunImgDedupe(ctx context.Context, maxHammingDistance int, workers int) error {
 	dir, err := os.Getwd()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get current directory")
-		return
+		return fmt.Errorf("failed to get current directory: %w", err)
 	}
-	log.Info().Str("directory", dir).Msg("Scanning images")
-	images := scanImages(dir, workers)
+	log.Debug().Str("directory", dir).Msg("Scanning images")
+	images, err := scanImages(ctx, dir, workers)
+	if err != nil {
+		return err
+	}
 	if len(images) == 0 {
-		fmt.Println("No images found.")
-		return
+		utils.PrintInfo("No images found")
+		return nil
 	}
-	log.Info().Int("count", len(images)).Msg("Images scanned")
+	log.Debug().Int("count", len(images)).Msg("Images scanned")
 	groups := groupDuplicates(images, maxHammingDistance)
 	printResults(groups)
+	return nil
 }
 
-func scanImages(dir string, workers int) []*ImageInfo {
+func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		log.Error().Err(err).Str("directory", dir).Msg("Failed to read directory")
-		return nil
+		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 	var paths []string
 	for _, entry := range entries {
@@ -60,22 +64,25 @@ func scanImages(dir string, workers int) []*ImageInfo {
 		paths = append(paths, filepath.Join(dir, entry.Name()))
 	}
 	if len(paths) == 0 {
-		return nil
+		return nil, nil
 	}
 	pathChan := make(chan string, len(paths))
 	resultChan := make(chan *ImageInfo, len(paths))
 	var wg sync.WaitGroup
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for path := range pathChan {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
 				info := processImage(path)
 				if info != nil {
 					resultChan <- info
 				}
 			}
-		}()
+		})
 	}
 	for _, path := range paths {
 		pathChan <- path
@@ -83,11 +90,16 @@ func scanImages(dir string, workers int) []*ImageInfo {
 	close(pathChan)
 	wg.Wait()
 	close(resultChan)
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	var images []*ImageInfo
 	for info := range resultChan {
 		images = append(images, info)
 	}
-	return images
+	return images, nil
 }
 
 func processImage(path string) *ImageInfo {
@@ -154,25 +166,25 @@ func groupDuplicates(images []*ImageInfo, maxHammingDistance int) [][]*ImageInfo
 
 func printResults(groups [][]*ImageInfo) {
 	if len(groups) == 0 {
-		log.Info().Msg("No duplicate images found.")
+		utils.PrintInfo("No duplicate images found")
 		return
 	}
-	log.Info().Int("groups", len(groups)).Msg("Found sets of duplicates")
-	fmt.Println()
+	utils.PrintInfo(fmt.Sprintf("Found %d sets of duplicates", len(groups)))
 	for i, group := range groups {
 		best := group[0]
 		duplicates := group[1:]
-		fmt.Printf("SET #%d\n", i+1)
-		fmt.Printf("  - KEEP  : %s (%dx%d)\n", best.Filename, best.Width, best.Height)
+		utils.PrintGeneric(fmt.Sprintf("SET #%d", i+1))
+		utils.PrintGeneric(fmt.Sprintf("  - KEEP  : %s (%dx%d)", best.Filename, best.Width, best.Height))
 		var dupNames []string
 		for _, d := range duplicates {
 			dupNames = append(dupNames, fmt.Sprintf("%s (%dx%d)", d.Filename, d.Width, d.Height))
 		}
-		fmt.Printf("  - DELETE: %s\n", strings.Join(dupNames, ", "))
-		fmt.Printf("  - CMD   : rm")
+		utils.PrintGeneric(fmt.Sprintf("  - DELETE: %s", strings.Join(dupNames, ", ")))
+		cmdStr := "rm"
 		for _, d := range duplicates {
-			fmt.Printf(" %q", d.Filename)
+			cmdStr += fmt.Sprintf(" %q", d.Filename)
 		}
-		fmt.Printf("\n\n")
+		utils.PrintGeneric(fmt.Sprintf("  - CMD   : %s", cmdStr))
+		utils.PrintGeneric("")
 	}
 }

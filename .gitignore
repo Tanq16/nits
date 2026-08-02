@@ -1,5 +1,11 @@
 testdir
 nits
-internal/mermaidsvg/static/js/mermaid.min.js
-internal/mermaidsvg/static/js/tailwindcss.js
+nits-*
+internal/server/static/js/*.js
+internal/generics/static/js/*
+!internal/generics/static/js/.gitkeep
+internal/generics/static/css/*
+!internal/generics/static/css/.gitkeep
+internal/generics/static/fonts/*
+!internal/generics/static/fonts/.gitkeep
 .claude

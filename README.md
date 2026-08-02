@@ -1,8 +1,7 @@
 <div align="center">
-  <!-- Logo can be added at .github/assets/logo.png -->
   <h1>nits</h1>
 
-  <a href="https://github.com/tanq16/nits/actions/workflows/build.yml"><img alt="Build Workflow" src="https://github.com/tanq16/nits/actions/workflows/build.yml/badge.svg"></a>&nbsp;<a href="https://github.com/tanq16/nits/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/tanq16/nits"></a><br><br>
+  <a href="https://github.com/tanq16/nits/actions/workflows/release.yaml"><img alt="Build Workflow" src="https://github.com/tanq16/nits/actions/workflows/release.yaml/badge.svg"></a>&nbsp;<a href="https://github.com/tanq16/nits/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/tanq16/nits"></a><br><br>
   <a href="#capabilities">Capabilities</a> &bull; <a href="#installation">Installation</a> &bull; <a href="#usage">Usage</a> &bull; <a href="#tips-and-notes">Tips & Notes</a>
 </div>
 
@@ -18,10 +17,13 @@ A more robust tool is [anbu](https://github.com/tanq16/anbu). As and when I find
 
 | Category | Commands | Description |
 |----------|----------|-------------|
-| Files | `file-organizer`, `file-unzipper`, `file-json-uniq` | File management and organization utilities |
+| Files | `file-organizer`, `file-unzipper`, `file-json-uniq`, `manual-rename`/`mrename` | File management, organization, and interactive rename |
 | Images | `img-webp`, `img-dedup` | Image compression and duplicate detection |
 | Video | `video-info`, `video-encode` | Video file analysis and encoding using ffmpeg |
-| Diagrams | `mermaid-svg` | Web interface for Mermaid diagram to SVG conversion |
+| Data | `convert`, `neo4j` | Format conversion and Neo4j Cypher queries |
+| Productivity | `tasks` | Lightweight local task tracker with pending/done status |
+| Diagrams | `mermaid-svg`, `markdown`/`md` | Mermaid SVG conversion and markdown viewer |
+| Network | `fs-sync` | One-shot bidirectional file synchronization over HTTP/HTTPS |
 | System | `setup` | Check if required third-party tools are installed |
 
 ## Installation
@@ -45,7 +47,7 @@ cd nits
 make build-local
 ```
 
-**Requirements:** Go v1.24+
+**Requirements:** Go v1.26+
 
 ## Usage
 
@@ -238,11 +240,75 @@ Check if required third-party tools are installed (ImageMagick, ffprobe, ffmpeg)
 nits setup
 ```
 
+### Rename & Convert
+
+#### `manual-rename` / `mrename`
+
+Interactively rename files and directories one by one, optionally including directories, hidden files, and extension changes.
+
+```bash
+nits manual-rename
+nits mrename -d          # include directories
+nits mrename -H          # include hidden
+nits mrename -x          # allow extension changes
+```
+
+#### `convert`
+
+Convert data between docker run/compose formats, URL encoding, and JWT decoding.
+
+```bash
+nits convert docker-compose "docker run ..."
+nits convert compose-docker compose.yaml
+nits convert url "Hello World"
+nits convert urld "Hello%20World"
+nits convert jwtd "$TOKEN"
+```
+
+#### `tasks`
+
+Lightweight personal task tracking with pending/done status, stored at `~/.config/nits/tasks.json`.
+
+```bash
+nits tasks add
+nits tasks list [--done] [--filter REGEX]
+nits tasks done ID
+nits tasks delete ID
+```
+
+#### `markdown` / `md`
+
+Web-based markdown viewer with syntax highlighting and Mermaid diagram rendering.
+
+```bash
+nits markdown
+nits md -l :3000
+```
+
+#### `fs-sync`
+
+One-shot bidirectional file synchronization over HTTP/HTTPS.
+
+```bash
+nits fs-sync serve --mode send|receive -p 8080 -d DIR [--ignore] [-t] [--delete] [-r]
+nits fs-sync client URL -d DIR [--ignore] [-k] [--delete] [-r]
+```
+
+#### `neo4j`
+
+Execute inline or file-based Cypher queries against a Neo4j database.
+
+```bash
+nits neo4j -q "MATCH (n) RETURN n LIMIT 5"
+nits neo4j --query-file ./queries.yaml -o results.json
+nits neo4j --write -q "CREATE (n:Person {name: 'Alice'}) RETURN n"
+```
+
 ## Tips and Notes
 
 - Run `nits setup` to verify required third-party tools are installed
-- Use `--debug` flag with any command for verbose logging
-- The `mermaid-svg` command requires no external dependencies - assets are embedded
+- Use `--debug` for structured zerolog output, or `--for-ai` for plain-text AI-friendly output (mutually exclusive)
+- Build with `make build-local` (runs `make assets`) so embedded mermaid/markdown JS assets are present
 - Image commands require ImageMagick (`convert` or `magick`)
 - Video commands require FFmpeg (`ffprobe` and `ffmpeg`)
 - Releases follow semantic versioning based on commit messages (`[major-release]`, `[minor-release]`)

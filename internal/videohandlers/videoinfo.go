@@ -2,6 +2,7 @@ package videohandlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -51,22 +52,9 @@ type Tags struct {
 }
 
 func RunVideoInfo(inputFile string) error {
-	cmd := exec.Command("ffprobe",
-		"-v", "quiet",
-		"-print_format", "json",
-		"-show_format",
-		"-show_streams",
-		inputFile,
-	)
-
-	output, err := cmd.Output()
+	data, err := getVideoInfo(inputFile)
 	if err != nil {
-		return fmt.Errorf("failed to run ffprobe: %w", err)
-	}
-
-	var data FFProbeOutput
-	if err := json.Unmarshal(output, &data); err != nil {
-		return fmt.Errorf("failed to parse ffprobe output: %w", err)
+		return err
 	}
 
 	printOverview(data.Format)
@@ -173,6 +161,15 @@ func getVideoInfo(inputFile string) (*FFProbeOutput, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
+		// Capture stderr so the error carries the real ffprobe failure reason,
+		// not just the generic "exit status 1".
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			detail := strings.TrimSpace(string(exitErr.Stderr))
+			if detail != "" {
+				return nil, fmt.Errorf("%s: %w", detail, err)
+			}
+		}
 		return nil, fmt.Errorf("failed to run ffprobe: %w", err)
 	}
 
