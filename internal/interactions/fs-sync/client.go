@@ -117,7 +117,9 @@ func (c *Client) pullFromServer() error {
 		} else {
 			u.PrintSuccess(fmt.Sprintf("%d file(s) would be synced", totalCount))
 		}
-		return nil
+		// Empty /files POST tells the one-shot server to shut down.
+		_, err = c.fetchFiles(nil)
+		return err
 	}
 
 	syncedCount := 0
@@ -125,6 +127,10 @@ func (c *Client) pullFromServer() error {
 		syncedCount, err = c.fetchFiles(toRequest)
 		if err != nil {
 			return fmt.Errorf("failed to fetch files: %w", err)
+		}
+	} else {
+		if _, err = c.fetchFiles(nil); err != nil {
+			return fmt.Errorf("failed to signal server done: %w", err)
 		}
 	}
 	deletedCount := 0
@@ -168,11 +174,6 @@ func (c *Client) pushToServer() error {
 		}
 	}
 
-	if len(needed) == 0 && len(toDelete) == 0 {
-		u.PrintWarn("no files to send", nil)
-		return nil
-	}
-
 	var files []FileContent
 	for _, path := range needed {
 		fullPath := filepath.Join(c.cfg.SyncDir, path)
@@ -184,6 +185,7 @@ func (c *Client) pushToServer() error {
 		files = append(files, FileContent{Path: path, Content: content})
 	}
 
+	// Always POST /upload (even empty) so the one-shot server shuts down.
 	uploadReq := UploadRequest{
 		Files:    files,
 		ToDelete: toDelete,
@@ -202,6 +204,10 @@ func (c *Client) pushToServer() error {
 		return fmt.Errorf("server returned %d", resp.StatusCode)
 	}
 
+	if len(files) == 0 && len(toDelete) == 0 {
+		u.PrintWarn("no files to send", nil)
+		return nil
+	}
 	for _, file := range files {
 		u.PrintIndentedSuccess(fmt.Sprintf("Sent: %s", file.Path))
 	}

@@ -28,6 +28,16 @@ func convertDockerToCompose(input string) error {
 	var command []string
 	imageName := ""
 	skipNext := false
+	booleanFlags := map[string]struct{}{
+		"-d": {}, "--detach": {},
+		"--rm": {},
+		"-i": {}, "--interactive": {},
+		"-t": {}, "--tty": {},
+		"-it": {}, "-ti": {},
+		"--init": {},
+		"--privileged": {},
+		"--read-only": {},
+	}
 
 	for i := range parts {
 		if skipNext {
@@ -74,11 +84,18 @@ func convertDockerToCompose(input string) error {
 			case part == "--name":
 				if i+1 < len(parts) {
 					serviceName := parts[i+1]
-					composeConfig["services"].(map[string]any)["app"] = nil
-					composeConfig["services"].(map[string]any)[serviceName] = service
+					services := composeConfig["services"].(map[string]any)
+					delete(services, "app")
+					services[serviceName] = service
 					skipNext = true
 				}
 			default:
+				if _, isBool := booleanFlags[part]; isBool {
+					break
+				}
+				if strings.Contains(part, "=") {
+					break
+				}
 				if i+1 < len(parts) && !strings.HasPrefix(parts[i+1], "-") {
 					skipNext = true
 				}

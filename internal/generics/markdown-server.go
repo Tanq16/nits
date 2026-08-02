@@ -105,15 +105,27 @@ var imageContentTypes = map[string]string{
 	".ico": "image/x-icon", ".bmp": "image/bmp",
 }
 
+func (s *MarkdownServer) resolveUnderRoot(rel string) (string, bool) {
+	cleanPath := filepath.Clean(rel)
+	if cleanPath == "." || cleanPath == ".." || strings.HasPrefix(cleanPath, ".."+string(filepath.Separator)) || filepath.IsAbs(cleanPath) {
+		return "", false
+	}
+	fullPath := filepath.Join(s.Options.RootDir, cleanPath)
+	root := s.Options.RootDir
+	if fullPath != root && !strings.HasPrefix(fullPath, root+string(filepath.Separator)) {
+		return "", false
+	}
+	return fullPath, true
+}
+
 func (s *MarkdownServer) serveFileContent(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		http.Error(w, "Missing path parameter", http.StatusBadRequest)
 		return
 	}
-	cleanPath := filepath.Clean(path)
-	fullPath := filepath.Join(s.Options.RootDir, cleanPath)
-	if !strings.HasPrefix(fullPath, s.Options.RootDir) {
+	fullPath, ok := s.resolveUnderRoot(path)
+	if !ok {
 		http.Error(w, "Invalid path", http.StatusForbidden)
 		return
 	}
@@ -151,9 +163,8 @@ func (s *MarkdownServer) serveRawFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing path", http.StatusBadRequest)
 		return
 	}
-	cleanPath := filepath.Clean(path)
-	fullPath := filepath.Join(s.Options.RootDir, cleanPath)
-	if !strings.HasPrefix(fullPath, s.Options.RootDir) {
+	fullPath, ok := s.resolveUnderRoot(path)
+	if !ok {
 		http.Error(w, "Invalid path", http.StatusForbidden)
 		return
 	}

@@ -1,5 +1,4 @@
 <div align="center">
-  <img src=".github/assets/logo.png" alt="nits Logo" width="200">
   <h1>nits</h1>
 
   <a href="https://github.com/tanq16/nits/actions/workflows/release.yaml"><img alt="Build Workflow" src="https://github.com/tanq16/nits/actions/workflows/release.yaml/badge.svg"></a>&nbsp;<a href="https://github.com/tanq16/nits/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/tanq16/nits"></a><br><br>
