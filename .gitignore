@@ -9,3 +9,4 @@ internal/generics/static/css/*
 internal/generics/static/fonts/*
 !internal/generics/static/fonts/.gitkeep
 .claude
+.agents
