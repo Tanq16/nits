@@ -1,6 +1,7 @@
 package imagehandlers
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"image"
@@ -8,7 +9,7 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -25,6 +26,7 @@ type ImageInfo struct {
 	Width    int
 	Height   int
 	Area     int
+	FileSize int64
 }
 
 func RunImgDedupe(ctx context.Context, maxHammingDistance int, workers int) error {
@@ -109,6 +111,11 @@ func processImage(path string) *ImageInfo {
 		return nil
 	}
 	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil {
+		log.Error().Err(err).Str("file", path).Msg("Failed to stat file")
+		return nil
+	}
 	img, _, err := image.Decode(file)
 	if err != nil {
 		return nil
@@ -127,6 +134,22 @@ func processImage(path string) *ImageInfo {
 		Width:    w,
 		Height:   h,
 		Area:     w * h,
+		FileSize: stat.Size(),
+	}
+}
+
+// PNG > WebP > JPG/JPEG — lower rank means preferred for keeping
+func formatRank(filename string) int {
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".png":
+		return 0
+	case ".webp":
+		return 1
+	case ".jpg", ".jpeg":
+		return 2
+	default:
+		return 3
 	}
 }
 
@@ -155,8 +178,14 @@ func groupDuplicates(images []*ImageInfo, maxHammingDistance int) [][]*ImageInfo
 			}
 		}
 		if len(currentGroup) > 1 {
-			sort.Slice(currentGroup, func(i, j int) bool {
-				return currentGroup[i].Area > currentGroup[j].Area
+			slices.SortFunc(currentGroup, func(a, b *ImageInfo) int {
+				if c := cmp.Compare(b.Area, a.Area); c != 0 {
+					return c
+				}
+				if c := cmp.Compare(formatRank(a.Filename), formatRank(b.Filename)); c != 0 {
+					return c
+				}
+				return cmp.Compare(b.FileSize, a.FileSize)
 			})
 			groups = append(groups, currentGroup)
 		}
