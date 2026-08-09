@@ -2,36 +2,31 @@ package filehandlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/rs/zerolog/log"
 )
 
 func RunJSONUnique(targetFile, path, key string) error {
 	absPath, _ := filepath.Abs(targetFile)
 	data, err := os.ReadFile(absPath)
 	if err != nil {
-		log.Debug().Err(err).Str("file", targetFile).Msg("Failed to read file")
-		return fmt.Errorf("failed to read file: %w", err)
+		return err
 	}
 	var root map[string]any
 	if err := json.Unmarshal(data, &root); err != nil {
-		log.Debug().Err(err).Str("file", targetFile).Msg("Failed to parse JSON")
-		return fmt.Errorf("failed to parse JSON: %w", err)
+		return err
 	}
 	pathParts := strings.Split(path, ".")
 	value, exists := getNestedValue(root, pathParts)
 	if !exists {
-		log.Debug().Str("path", path).Msg("Path not found")
-		return fmt.Errorf("path '%s' not found in JSON", path)
+		return errors.New("path not found in JSON")
 	}
 	slice, ok := value.([]any)
 	if !ok {
-		log.Debug().Str("path", path).Msg("Path not a slice")
-		return fmt.Errorf("path '%s' does not point to a slice", path)
+		return errors.New("path does not point to a slice")
 	}
 	keyParts := strings.Split(key, ".")
 	seen := make(map[string]bool)
@@ -56,14 +51,11 @@ func RunJSONUnique(targetFile, path, key string) error {
 	setNestedValue(root, pathParts, unique)
 	output, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
-		log.Debug().Err(err).Msg("Failed to marshal JSON")
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return err
 	}
 	if err := os.WriteFile(absPath, output, 0644); err != nil {
-		log.Debug().Err(err).Str("file", targetFile).Msg("Failed to write file")
-		return fmt.Errorf("failed to write file: %w", err)
+		return err
 	}
-	log.Debug().Int("original", len(slice)).Int("unique", len(unique)).Msg("Deduplicated")
 	return nil
 }
 

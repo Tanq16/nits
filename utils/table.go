@@ -22,8 +22,6 @@ var (
 		Foreground(lipgloss.ANSIColor(8))
 )
 
-// PrintTable prints a formatted table with headers and rows
-// In AI mode, renders as a markdown table for easy parsing
 // Note: table.HeaderRow == -1, data rows start at 0
 func PrintTable(headers []string, rows [][]string) {
 	if GlobalForAIFlag {
@@ -46,7 +44,6 @@ func PrintTable(headers []string, rows [][]string) {
 	PrintGeneric(t.Render())
 }
 
-// printMarkdownTable renders headers and rows as a markdown table
 func printMarkdownTable(headers []string, rows [][]string) {
 	if len(headers) == 0 {
 		return
@@ -62,7 +59,6 @@ func printMarkdownTable(headers []string, rows [][]string) {
 	}
 }
 
-// escapeCells escapes pipe characters in cell values for valid markdown tables
 func escapeCells(cells []string) []string {
 	escaped := make([]string, len(cells))
 	for i, cell := range cells {

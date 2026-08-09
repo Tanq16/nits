@@ -21,8 +21,6 @@ func getStdinScanner() *bufio.Scanner {
 	return stdinScanner
 }
 
-// ReadPipedInput reads all remaining input from stdin pipe (bulk read)
-// Returns empty string if stdin is not a pipe
 func ReadPipedInput() string {
 	fi, err := os.Stdin.Stat()
 	if err != nil || fi.Mode()&os.ModeCharDevice != 0 {
@@ -39,8 +37,6 @@ func ReadPipedInput() string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
-// ReadPipedLine reads a single line from stdin pipe (for sequential prompts)
-// Returns empty string if stdin is not a pipe or no more lines
 func ReadPipedLine() string {
 	fi, err := os.Stdin.Stat()
 	if err != nil || fi.Mode()&os.ModeCharDevice != 0 {
@@ -91,8 +87,6 @@ func (m inputModel) View() tea.View {
 	return tea.NewView(m.textInput.View())
 }
 
-// PromptInput displays an inline prompt and returns user input
-// In AI mode, reads a single line from stdin pipe instead of launching TUI
 func PromptInput(prompt string, placeholder string) (string, error) {
 	if GlobalForAIFlag {
 		return ReadPipedLine(), nil
@@ -115,8 +109,6 @@ func PromptInput(prompt string, placeholder string) (string, error) {
 	return strings.TrimSpace(result.value), nil
 }
 
-// PromptPassword displays an inline password prompt (masked input)
-// In AI mode, reads a single line from stdin pipe instead of launching TUI
 // Security note: caller must ensure the returned value is never passed to Print functions
 func PromptPassword(prompt string) (string, error) {
 	if GlobalForAIFlag {
@@ -179,8 +171,6 @@ func (m textAreaModel) View() tea.View {
 	return tea.NewView(m.textarea.View() + "\n(Ctrl+D to submit, Esc to cancel)")
 }
 
-// PromptTextArea displays a multi-line text area and returns user input
-// In AI mode, reads all remaining stdin pipe input instead of launching TUI
 func PromptTextArea(prompt string, placeholder string) (string, error) {
 	if GlobalForAIFlag {
 		return ReadPipedInput(), nil

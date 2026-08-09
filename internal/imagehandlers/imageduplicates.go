@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	"github.com/corona10/goimagehash"
-	"github.com/rs/zerolog/log"
 	"github.com/tanq16/nits/utils"
 	_ "golang.org/x/image/webp"
 )
@@ -32,9 +31,8 @@ type ImageInfo struct {
 func RunImgDedupe(ctx context.Context, maxHammingDistance int, workers int) error {
 	dir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
-	log.Debug().Str("directory", dir).Msg("Scanning images")
 	images, err := scanImages(ctx, dir, workers)
 	if err != nil {
 		return err
@@ -43,7 +41,6 @@ func RunImgDedupe(ctx context.Context, maxHammingDistance int, workers int) erro
 		utils.PrintInfo("No images found")
 		return nil
 	}
-	log.Debug().Int("count", len(images)).Msg("Images scanned")
 	groups := groupDuplicates(images, maxHammingDistance)
 	printResults(groups)
 	return nil
@@ -52,7 +49,7 @@ func RunImgDedupe(ctx context.Context, maxHammingDistance int, workers int) erro
 func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read directory: %w", err)
+		return nil, err
 	}
 	var paths []string
 	for _, entry := range entries {
@@ -107,13 +104,11 @@ func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, err
 func processImage(path string) *ImageInfo {
 	file, err := os.Open(path)
 	if err != nil {
-		log.Error().Err(err).Str("file", path).Msg("Failed to open file")
 		return nil
 	}
 	defer file.Close()
 	stat, err := file.Stat()
 	if err != nil {
-		log.Error().Err(err).Str("file", path).Msg("Failed to stat file")
 		return nil
 	}
 	img, _, err := image.Decode(file)
@@ -122,7 +117,6 @@ func processImage(path string) *ImageInfo {
 	}
 	hash, err := goimagehash.PerceptionHash(img)
 	if err != nil {
-		log.Error().Err(err).Str("file", path).Msg("Failed to generate hash")
 		return nil
 	}
 	bounds := img.Bounds()

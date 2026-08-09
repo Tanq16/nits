@@ -6,19 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rs/zerolog/log"
-
 	u "github.com/tanq16/nits/utils"
 )
 
 func ManualRename(includeDir bool, hidden bool, includeExtension bool) error {
 	currentDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return err
 	}
 	entries, err := os.ReadDir(currentDir)
 	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
+		return err
 	}
 
 	var items []os.DirEntry
@@ -38,7 +36,6 @@ func ManualRename(includeDir bool, hidden bool, includeExtension bool) error {
 		u.PrintWarn("no items found to rename", nil)
 		return nil
 	}
-	log.Debug().Int("count", len(items)).Msg("items to process")
 
 	renameCount := 0
 	for _, entry := range items {
@@ -63,7 +60,6 @@ func ManualRename(includeDir bool, hidden bool, includeExtension bool) error {
 
 		oldPath := filepath.Join(currentDir, oldName)
 		newPath := filepath.Join(currentDir, newName)
-		log.Debug().Str("old", oldName).Str("new", newName).Msg("renaming")
 
 		if err := os.Rename(oldPath, newPath); err != nil {
 			u.PrintIndentedError(fmt.Sprintf("%s → %s", oldName, newName), err)

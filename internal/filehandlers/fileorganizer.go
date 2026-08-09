@@ -16,11 +16,11 @@ import (
 func RunFileOrganizer(dryRun bool) (movedCount int, folderCount int, err error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get current directory: %w", err)
+		return 0, 0, err
 	}
 	entries, err := os.ReadDir(currentDir)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to read directory: %w", err)
+		return 0, 0, err
 	}
 	groups := make(map[string][]string)
 	for _, entry := range entries {
@@ -46,13 +46,13 @@ func RunFileOrganizer(dryRun bool) (movedCount int, folderCount int, err error) 
 	for base, files := range filteredGroups {
 		basePath := filepath.Join(currentDir, base)
 		if err := os.MkdirAll(basePath, 0755); err != nil {
-			return movedCount, folderCount, fmt.Errorf("failed to create directory %s: %w", basePath, err)
+			return movedCount, folderCount, err
 		}
 		for _, filename := range files {
 			srcPath := filepath.Join(currentDir, filename)
 			dstPath := filepath.Join(basePath, filename)
 			if err := os.Rename(srcPath, dstPath); err != nil {
-				return movedCount, folderCount, fmt.Errorf("failed to move %s: %w", filename, err)
+				return movedCount, folderCount, err
 			}
 			movedCount++
 		}
