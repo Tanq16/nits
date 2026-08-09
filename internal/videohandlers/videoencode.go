@@ -244,6 +244,10 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 				utils.PrintIndentedError(line, nil)
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			hasErrors = true
+			utils.PrintIndentedError(fmt.Sprintf("stderr stream error: %v", err), nil)
+		}
 		errorChan <- hasErrors
 	}()
 
@@ -292,6 +296,9 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 				currentPercent.Store(int64(percent))
 			}
 		}
+	}
+	if err := scanner.Err(); err != nil && ctx.Err() == nil {
+		utils.PrintIndentedError(fmt.Sprintf("progress stream error: %v", err), nil)
 	}
 
 	close(done)

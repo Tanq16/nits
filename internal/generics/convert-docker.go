@@ -31,12 +31,12 @@ func convertDockerToCompose(input string) error {
 	booleanFlags := map[string]struct{}{
 		"-d": {}, "--detach": {},
 		"--rm": {},
-		"-i": {}, "--interactive": {},
+		"-i":   {}, "--interactive": {},
 		"-t": {}, "--tty": {},
 		"-it": {}, "-ti": {},
-		"--init": {},
+		"--init":       {},
 		"--privileged": {},
-		"--read-only": {},
+		"--read-only":  {},
 	}
 
 	for i := range parts {
