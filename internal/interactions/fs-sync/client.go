@@ -211,10 +211,45 @@ func (c *Client) pushToServer(cb ClientCallbacks) error {
 	}
 
 	var toDelete []string
-	for path := range serverManifest {
-		if _, exists := localManifest[path]; !exists {
-			toDelete = append(toDelete, path)
+	if c.cfg.DeleteExtra {
+		for path := range serverManifest {
+			if _, exists := localManifest[path]; !exists {
+				toDelete = append(toDelete, path)
+			}
 		}
+	}
+
+	if c.cfg.DryRun {
+		for _, path := range needed {
+			cb.generic(fmt.Sprintf("Dry Run: %s", path))
+		}
+		if c.cfg.DeleteExtra {
+			for _, path := range toDelete {
+				cb.generic(fmt.Sprintf("Dry Run (delete): %s", path))
+			}
+		}
+		totalCount := len(needed)
+		if c.cfg.DeleteExtra {
+			totalCount += len(toDelete)
+		}
+		if totalCount == 0 {
+			cb.warn("no files would be synced", nil)
+		} else {
+			cb.success(fmt.Sprintf("%d file(s) would be synced", totalCount))
+		}
+		// Send empty UploadRequest so the one-shot server shuts down without modifying files.
+		emptyReq := UploadRequest{}
+		reqBody, _ := json.Marshal(emptyReq)
+		resp, err := c.httpClient.Post(
+			c.cfg.ServerAddr+"/upload",
+			"application/json",
+			bytes.NewReader(reqBody),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to signal server done: %w", err)
+		}
+		defer resp.Body.Close()
+		return nil
 	}
 
 	var files []FileContent
@@ -257,6 +292,7 @@ func (c *Client) pushToServer(cb ClientCallbacks) error {
 	cb.success(fmt.Sprintf("%d file(s) sent", len(files)))
 	return nil
 }
+
 
 func (c *Client) fetchManifest() (map[string]string, error) {
 	resp, err := c.httpClient.Get(c.cfg.ServerAddr + "/manifest")

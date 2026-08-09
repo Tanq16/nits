@@ -70,19 +70,29 @@ func RunImgWebp(ctx context.Context, dryRun bool, workers int) (*WebPStats, erro
 				webpPath := filepath.Join(path, fmt.Sprintf("%s.webp", uuidName))
 				tempWebp := filepath.Join(path, fmt.Sprintf("%s_temp.webp", uuidName))
 
-				statsMutex.Lock()
-				stats.Processed++
-				stats.OriginalFiles = append(stats.OriginalFiles, filename)
-				statsMutex.Unlock()
+				if err := runCmd(ctx, magickCmd, inputPath, "-quality", "98", webpPath); err != nil {
+					continue
+				}
 
-				runCmd(ctx, magickCmd, inputPath, "-quality", "98", webpPath)
 				webpSize := getFileSize(webpPath)
+				if webpSize == 0 {
+					os.Remove(webpPath)
+					continue
+				}
+
 				if webpSize >= origSize {
-					runCmd(ctx, magickCmd, inputPath, "-quality", "95", webpPath)
+					if err := runCmd(ctx, magickCmd, inputPath, "-quality", "95", webpPath); err != nil {
+						os.Remove(webpPath)
+						continue
+					}
+					webpSize = getFileSize(webpPath)
+					if webpSize == 0 {
+						os.Remove(webpPath)
+						continue
+					}
 					statsMutex.Lock()
 					stats.Quality95++
 					statsMutex.Unlock()
-					webpSize = getFileSize(webpPath)
 				} else {
 					statsMutex.Lock()
 					stats.Quality98++
@@ -92,8 +102,14 @@ func RunImgWebp(ctx context.Context, dryRun bool, workers int) (*WebPStats, erro
 				if webpSize > 190*1024 {
 					resizedThisFile := false
 					for scale := 90; scale >= 60; scale -= 10 {
-						runCmd(ctx, magickCmd, webpPath, "-resize", fmt.Sprintf("%d%%", scale), tempWebp)
+						if err := runCmd(ctx, magickCmd, webpPath, "-resize", fmt.Sprintf("%d%%", scale), tempWebp); err != nil {
+							break
+						}
 						newSize := getFileSize(tempWebp)
+						if newSize == 0 {
+							os.Remove(tempWebp)
+							break
+						}
 						resizedThisFile = true
 						if newSize <= 190*1024 || scale == 60 {
 							os.Rename(tempWebp, webpPath)
@@ -110,7 +126,10 @@ func RunImgWebp(ctx context.Context, dryRun bool, workers int) (*WebPStats, erro
 						os.Remove(tempWebp)
 					}
 				}
+
 				statsMutex.Lock()
+				stats.Processed++
+				stats.OriginalFiles = append(stats.OriginalFiles, filename)
 				if webpSize <= 190*1024 {
 					stats.FinalUnder190++
 				} else {
@@ -133,6 +152,7 @@ func RunImgWebp(ctx context.Context, dryRun bool, workers int) (*WebPStats, erro
 	}
 	close(pathChan)
 	wg.Wait()
+
 
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

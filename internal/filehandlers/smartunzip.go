@@ -76,21 +76,47 @@ func extractZip(zipPath, destDir string) error {
 		return err
 	}
 	defer r.Close()
+	cleanDest := filepath.Clean(destDir)
 	for _, f := range r.File {
-		fpath := filepath.Join(destDir, f.Name)
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, f.Mode())
+		fpath := filepath.Join(cleanDest, f.Name)
+		cleanPath := filepath.Clean(fpath)
+		if !strings.HasPrefix(cleanPath, cleanDest+string(filepath.Separator)) && cleanPath != cleanDest {
 			continue
 		}
-		os.MkdirAll(filepath.Dir(fpath), 0755)
-		outFile, _ := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		rc, _ := f.Open()
-		io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(cleanPath, f.Mode()); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(cleanPath), 0755); err != nil {
+			return err
+		}
+		outFile, err := os.OpenFile(cleanPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			outFile.Close()
+			return err
+		}
+		_, copyErr := io.Copy(outFile, rc)
+		outCloseErr := outFile.Close()
+		rcCloseErr := rc.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if outCloseErr != nil {
+			return outCloseErr
+		}
+		if rcCloseErr != nil {
+			return rcCloseErr
+		}
 	}
 	return nil
 }
+
 
 func generateUUID() string {
 	ret, _ := uuid.NewRandom()

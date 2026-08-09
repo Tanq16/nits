@@ -118,8 +118,9 @@ func init() {
 	fsSyncClientCmd.Flags().StringVarP(&fsSyncClientFlags.dir, "dir", "d", ".", "Local directory to sync")
 	fsSyncClientCmd.Flags().StringVar(&fsSyncClientFlags.ignore, "ignore", "", "Comma-separated patterns to ignore (e.g., '.git,node_modules')")
 	fsSyncClientCmd.Flags().BoolVarP(&fsSyncClientFlags.insecure, "insecure", "k", false, "Skip TLS certificate verification")
-	fsSyncClientCmd.Flags().BoolVar(&fsSyncClientFlags.delete, "delete", false, "Delete local files not present on server (when pulling)")
-	fsSyncClientCmd.Flags().BoolVarP(&fsSyncClientFlags.dryRun, "dry-run", "r", false, "Show what would be synced without doing it (when pulling)")
+	fsSyncClientCmd.Flags().BoolVar(&fsSyncClientFlags.delete, "delete", false, "Delete extra files not present on sender")
+	fsSyncClientCmd.Flags().BoolVarP(&fsSyncClientFlags.dryRun, "dry-run", "r", false, "Show what would be synced without doing it")
+
 
 	FSSyncCmd.AddCommand(fsSyncServeCmd)
 	FSSyncCmd.AddCommand(fsSyncClientCmd)
