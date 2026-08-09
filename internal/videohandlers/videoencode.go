@@ -42,7 +42,7 @@ type indexedStream struct {
 }
 
 func RunSmartEncode(ctx context.Context, inputFile string, opts SmartEncodeOptions) error {
-	data, err := getVideoInfo(inputFile)
+	data, err := GetVideoInfo(inputFile)
 	if err != nil {
 		return err
 	}
@@ -248,7 +248,7 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 	}()
 
 	label := filepath.Base(outputFile)
-	utils.PrintInfo(fmt.Sprintf("Encoding: %s | Duration: %s", label, formatDuration(totalDurationSecs)))
+	utils.PrintInfo(fmt.Sprintf("Encoding: %s | Duration: %s", label, FormatDuration(totalDurationSecs)))
 
 	var currentPercent atomic.Int64
 	done := make(chan struct{})

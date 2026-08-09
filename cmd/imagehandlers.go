@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -28,10 +30,34 @@ var imgWebpCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		if err := imagehandlers.RunImgWebp(ctx, imgWebpFlags.dryRun, imgWebpFlags.workers); err != nil {
+		utils.PrintRunning("Compressing images to WebP...")
+		stats, err := imagehandlers.RunImgWebp(ctx, imgWebpFlags.dryRun, imgWebpFlags.workers)
+		utils.ClearLines(1)
+		if err != nil {
 			utils.PrintFatal("Failed to compress images", err)
 		}
-		utils.PrintSuccess("Image compression complete")
+		if stats.Processed == 0 {
+			utils.PrintInfo("No images found to compress")
+			return
+		}
+
+		utils.PrintSuccess(fmt.Sprintf("Processed %d image(s), saved %.2f MB", stats.Processed, float64(stats.TotalSavedBytes)/1024/1024))
+		utils.PrintTable([]string{"Metric", "Value"}, [][]string{
+			{"Total images processed", fmt.Sprintf("%d", stats.Processed)},
+			{"Retained with Quality 98", fmt.Sprintf("%d", stats.Quality98)},
+			{"Fallback to Quality 95", fmt.Sprintf("%d", stats.Quality95)},
+			{"Images requiring Resizing", fmt.Sprintf("%d", stats.Resized)},
+			{"Final WebP <= 190 KB", fmt.Sprintf("%d", stats.FinalUnder190)},
+			{"Final WebP > 190 KB", fmt.Sprintf("%d", stats.FinalOver190)},
+			{"Total storage space saved", fmt.Sprintf("%.2f MB", float64(stats.TotalSavedBytes)/1024/1024)},
+		})
+
+		if imgWebpFlags.dryRun && len(stats.DetailedLogs) > 0 {
+			utils.PrintInfo("Dry run logs:")
+			for _, entry := range stats.DetailedLogs {
+				utils.PrintGeneric("  " + entry)
+			}
+		}
 	},
 }
 
@@ -42,8 +68,33 @@ var imgDedupeCmd = &cobra.Command{
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		if err := imagehandlers.RunImgDedupe(ctx, imgDedupeFlags.hammingDistance, imgDedupeFlags.workers); err != nil {
+		utils.PrintRunning("Scanning images for perceptual duplicates...")
+		groups, err := imagehandlers.FindDuplicates(ctx, imgDedupeFlags.hammingDistance, imgDedupeFlags.workers)
+		utils.ClearLines(1)
+		if err != nil {
 			utils.PrintFatal("Failed to find duplicate images", err)
+		}
+		if len(groups) == 0 {
+			utils.PrintSuccess("No duplicate images found")
+			return
+		}
+
+		utils.PrintInfo(fmt.Sprintf("Found %d set(s) of duplicates", len(groups)))
+		for i, group := range groups {
+			best := group[0]
+			duplicates := group[1:]
+			utils.PrintGeneric(fmt.Sprintf("\nSET #%d", i+1))
+			utils.PrintGeneric(fmt.Sprintf("  - KEEP  : %s (%dx%d)", best.Filename, best.Width, best.Height))
+			var dupNames []string
+			for _, d := range duplicates {
+				dupNames = append(dupNames, fmt.Sprintf("%s (%dx%d)", d.Filename, d.Width, d.Height))
+			}
+			utils.PrintGeneric(fmt.Sprintf("  - DELETE: %s", strings.Join(dupNames, ", ")))
+			cmdStr := "rm"
+			for _, d := range duplicates {
+				cmdStr += fmt.Sprintf(" %q", d.Filename)
+			}
+			utils.PrintGeneric(fmt.Sprintf("  - CMD   : %s", cmdStr))
 		}
 	},
 }

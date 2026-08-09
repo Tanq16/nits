@@ -2,25 +2,24 @@ package filehandlers
 
 import (
 	"archive/zip"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 )
 
-func RunFileUnzipper(uuidNames bool) error {
+func RunFileUnzipper(uuidNames bool) (int, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return 0, err
 	}
 	entries, err := os.ReadDir(currentDir)
 	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
+		return 0, err
 	}
+	unzippedCount := 0
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -34,20 +33,16 @@ func RunFileUnzipper(uuidNames bool) error {
 			base = generateUUID()
 		}
 		basePath := filepath.Join(currentDir, base)
-		log.Info().Str("zip", name).Str("directory", base).Msg("Processing zip file")
 		if err := os.MkdirAll(basePath, 0755); err != nil {
-			log.Error().Err(err).Str("zip", name).Msg("Failed to create directory")
-			continue
+			return unzippedCount, err
 		}
 		zipPath := filepath.Join(currentDir, name)
 		newZipPath := filepath.Join(basePath, name)
 		if err := os.Rename(zipPath, newZipPath); err != nil {
-			log.Error().Err(err).Str("zip", name).Msg("Failed to move zip file")
-			continue
+			return unzippedCount, err
 		}
 		if err := extractZip(newZipPath, basePath); err != nil {
-			log.Error().Err(err).Str("zip", name).Msg("Failed to extract zip file")
-			continue
+			return unzippedCount, err
 		}
 		os.Remove(newZipPath)
 		if uuidNames {
@@ -63,7 +58,6 @@ func RunFileUnzipper(uuidNames bool) error {
 		if len(visibleFiles) == 1 {
 			subdirPath := filepath.Join(basePath, visibleFiles[0])
 			if info, _ := os.Stat(subdirPath); info != nil && info.IsDir() {
-				log.Info().Str("directory", base).Str("subdirectory", visibleFiles[0]).Msg("Flattening single subdirectory")
 				subEntries2, _ := os.ReadDir(subdirPath)
 				for _, subEntry := range subEntries2 {
 					os.Rename(filepath.Join(subdirPath, subEntry.Name()), filepath.Join(basePath, subEntry.Name()))
@@ -71,8 +65,9 @@ func RunFileUnzipper(uuidNames bool) error {
 				os.Remove(subdirPath)
 			}
 		}
+		unzippedCount++
 	}
-	return nil
+	return unzippedCount, nil
 }
 
 func extractZip(zipPath, destDir string) error {

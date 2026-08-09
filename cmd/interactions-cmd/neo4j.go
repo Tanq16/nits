@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/tanq16/nits/internal/interactions"
 	u "github.com/tanq16/nits/utils"
@@ -37,13 +36,14 @@ var Neo4jCmd = &cobra.Command{
 		ctx := context.Background()
 		var results []interactions.QueryResult
 		var err error
+
+		u.PrintRunning("Executing Neo4j query/queries...")
 		if neo4jCmdFlags.query != "" {
-			log.Debug().Msg(fmt.Sprintf("executing single query: %s", neo4jCmdFlags.query))
 			results, err = interactions.ExecuteNeo4jQueries(ctx, neo4jCmdFlags.uri, neo4jCmdFlags.user, neo4jCmdFlags.password, neo4jCmdFlags.database, []string{neo4jCmdFlags.query}, neo4jCmdFlags.writeMode)
 		} else {
-			log.Debug().Msg(fmt.Sprintf("executing queries from file: %s", neo4jCmdFlags.queryFile))
 			results, err = interactions.ExecuteNeo4jQueriesFromFile(ctx, neo4jCmdFlags.uri, neo4jCmdFlags.user, neo4jCmdFlags.password, neo4jCmdFlags.database, neo4jCmdFlags.queryFile, neo4jCmdFlags.writeMode)
 		}
+		u.ClearLines(1)
 		if err != nil {
 			u.PrintFatal("failed to execute neo4j queries", err)
 		}
@@ -55,7 +55,7 @@ var Neo4jCmd = &cobra.Command{
 		if err := os.WriteFile(neo4jCmdFlags.outputFile, jsonData, 0644); err != nil {
 			u.PrintFatal(fmt.Sprintf("failed to write results to file: %s", neo4jCmdFlags.outputFile), err)
 		}
-		u.PrintInfo(fmt.Sprintf("Successfully executed queries and saved results to %s", neo4jCmdFlags.outputFile))
+		u.PrintSuccess(fmt.Sprintf("Executed queries and saved results to %s", neo4jCmdFlags.outputFile))
 	},
 }
 

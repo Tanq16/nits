@@ -41,10 +41,36 @@ var tasksAddCmd = &cobra.Command{
 }
 
 var tasksDoneCmd = &cobra.Command{
-	Use:   "done <id>",
-	Short: "Mark a task as done by its ID",
-	Args:  cobra.ExactArgs(1),
+	Use:   "done [id]",
+	Short: "Mark a task as done by its ID (interactive if ID omitted)",
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			pending, err := generics.GetPendingTasks()
+			if err != nil {
+				u.PrintFatal("failed to load tasks", err)
+			}
+			if len(pending) == 0 {
+				u.PrintInfo("No pending tasks to mark done")
+				return
+			}
+			options := make([]string, len(pending))
+			for i, t := range pending {
+				options[i] = strconv.Itoa(t.ID) + ": " + t.Task
+			}
+			idx, err := u.PromptSelect("Select task to mark done:", options)
+			if err != nil {
+				u.PrintFatal("failed to read selection", err)
+			}
+			if idx < 0 {
+				return
+			}
+			if err := generics.TasksDone(pending[idx].ID); err != nil {
+				u.PrintFatal("failed to mark task done", err)
+			}
+			return
+		}
+
 		id, err := strconv.Atoi(args[0])
 		if err != nil {
 			u.PrintFatal("invalid task ID", nil)
@@ -56,10 +82,36 @@ var tasksDoneCmd = &cobra.Command{
 }
 
 var tasksDeleteCmd = &cobra.Command{
-	Use:   "delete <id>",
-	Short: "Delete a task by its ID regardless of status",
-	Args:  cobra.ExactArgs(1),
+	Use:   "delete [id]",
+	Short: "Delete a task by its ID (interactive if ID omitted)",
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			all, err := generics.GetAllTasks()
+			if err != nil {
+				u.PrintFatal("failed to load tasks", err)
+			}
+			if len(all) == 0 {
+				u.PrintInfo("No tasks to delete")
+				return
+			}
+			options := make([]string, len(all))
+			for i, t := range all {
+				options[i] = strconv.Itoa(t.ID) + ": " + t.Task + " [" + string(t.Status) + "]"
+			}
+			idx, err := u.PromptSelect("Select task to delete:", options)
+			if err != nil {
+				u.PrintFatal("failed to read selection", err)
+			}
+			if idx < 0 {
+				return
+			}
+			if err := generics.TasksDelete(all[idx].ID); err != nil {
+				u.PrintFatal("failed to delete task", err)
+			}
+			return
+		}
+
 		id, err := strconv.Atoi(args[0])
 		if err != nil {
 			u.PrintFatal("invalid task ID", nil)

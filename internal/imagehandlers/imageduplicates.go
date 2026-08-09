@@ -3,7 +3,6 @@ package imagehandlers
 import (
 	"cmp"
 	"context"
-	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
@@ -14,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/corona10/goimagehash"
-	"github.com/tanq16/nits/utils"
 	_ "golang.org/x/image/webp"
 )
 
@@ -28,22 +26,19 @@ type ImageInfo struct {
 	FileSize int64
 }
 
-func RunImgDedupe(ctx context.Context, maxHammingDistance int, workers int) error {
+func FindDuplicates(ctx context.Context, maxHammingDistance int, workers int) ([][]*ImageInfo, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	images, err := scanImages(ctx, dir, workers)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(images) == 0 {
-		utils.PrintInfo("No images found")
-		return nil
+		return nil, nil
 	}
-	groups := groupDuplicates(images, maxHammingDistance)
-	printResults(groups)
-	return nil
+	return groupDuplicates(images, maxHammingDistance), nil
 }
 
 func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, error) {
@@ -185,29 +180,4 @@ func groupDuplicates(images []*ImageInfo, maxHammingDistance int) [][]*ImageInfo
 		}
 	}
 	return groups
-}
-
-func printResults(groups [][]*ImageInfo) {
-	if len(groups) == 0 {
-		utils.PrintInfo("No duplicate images found")
-		return
-	}
-	utils.PrintInfo(fmt.Sprintf("Found %d sets of duplicates", len(groups)))
-	for i, group := range groups {
-		best := group[0]
-		duplicates := group[1:]
-		utils.PrintGeneric(fmt.Sprintf("SET #%d", i+1))
-		utils.PrintGeneric(fmt.Sprintf("  - KEEP  : %s (%dx%d)", best.Filename, best.Width, best.Height))
-		var dupNames []string
-		for _, d := range duplicates {
-			dupNames = append(dupNames, fmt.Sprintf("%s (%dx%d)", d.Filename, d.Width, d.Height))
-		}
-		utils.PrintGeneric(fmt.Sprintf("  - DELETE: %s", strings.Join(dupNames, ", ")))
-		cmdStr := "rm"
-		for _, d := range duplicates {
-			cmdStr += fmt.Sprintf(" %q", d.Filename)
-		}
-		utils.PrintGeneric(fmt.Sprintf("  - CMD   : %s", cmdStr))
-		utils.PrintGeneric("")
-	}
 }

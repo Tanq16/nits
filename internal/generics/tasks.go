@@ -104,6 +104,36 @@ func nextTaskID(store *TaskStore) int {
 	return maxID + 1
 }
 
+func GetPendingTasks() ([]TaskEntry, error) {
+	store, err := loadTaskStore()
+	if err != nil {
+		return nil, err
+	}
+	var pending []TaskEntry
+	for _, t := range store.Tasks {
+		if t.Status == TaskPending {
+			pending = append(pending, t)
+		}
+	}
+	sort.Slice(pending, func(i, j int) bool {
+		return pending[i].ID > pending[j].ID
+	})
+	return pending, nil
+}
+
+func GetAllTasks() ([]TaskEntry, error) {
+	store, err := loadTaskStore()
+	if err != nil {
+		return nil, err
+	}
+	all := make([]TaskEntry, len(store.Tasks))
+	copy(all, store.Tasks)
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].ID > all[j].ID
+	})
+	return all, nil
+}
+
 func TasksList(showDone bool, filter string) error {
 	store, err := loadTaskStore()
 	if err != nil {
