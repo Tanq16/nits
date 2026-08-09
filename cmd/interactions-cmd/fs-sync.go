@@ -79,11 +79,32 @@ var fsSyncClientCmd = &cobra.Command{
 		if err != nil {
 			u.PrintFatal("Failed to initialize client", err)
 		}
-		if err := c.Run(); err != nil {
+		cb := fssync.ClientCallbacks{
+			OnInfo: func(msg string) {
+				u.PrintInfo(msg)
+			},
+			OnGeneric: func(msg string) {
+				u.PrintGeneric(msg)
+			},
+			OnItemSuccess: func(msg string) {
+				u.PrintIndentedSuccess(msg)
+			},
+			OnWarn: func(msg string, err error) {
+				u.PrintWarn(msg, err)
+			},
+			OnSuccess: func(msg string) {
+				u.PrintSuccess(msg)
+			},
+			OnError: func(msg string, err error) {
+				u.PrintError(msg, err)
+			},
+		}
+		if err := c.Run(cb); err != nil {
 			u.PrintFatal("Sync failed", err)
 		}
 	},
 }
+
 
 func init() {
 	fsSyncServeCmd.Flags().StringVarP(&fsSyncServeFlags.mode, "mode", "m", "send", "Sync mode: 'send' (serve files) or 'receive' (accept files)")

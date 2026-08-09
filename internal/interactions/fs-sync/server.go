@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -80,7 +81,7 @@ func (s *Server) Run() error {
 			err = server.ListenAndServe()
 		}
 		if err != nil && err != http.ErrServerClosed {
-			u.PrintError("Server error", err)
+			log.Printf("ERROR [fs-sync-server] Server error: %v", err)
 		}
 	}()
 	<-s.serveDone
@@ -129,13 +130,13 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		relPath := filepath.Clean(path)
 		if strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
-			u.PrintWarn(fmt.Sprintf("Invalid path: %s", path), nil)
+			log.Printf("WARN [fs-sync-server] Invalid path: %s", path)
 			continue
 		}
 		fullPath := filepath.Join(s.cfg.SyncDir, relPath)
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
-			u.PrintWarn(fmt.Sprintf("Failed to read file: %s", path), err)
+			log.Printf("WARN [fs-sync-server] Failed to read file %s: %v", path, err)
 			continue
 		}
 		files = append(files, FileContent{
@@ -161,18 +162,18 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	if s.cfg.DryRun {
 		for _, file := range uploadReq.Files {
-			u.PrintGeneric(fmt.Sprintf("Dry Run: %s", file.Path))
+			log.Printf("INFO [fs-sync-server] Dry Run: %s", file.Path)
 		}
 		if s.cfg.DeleteExtra {
 			for _, path := range uploadReq.ToDelete {
-				u.PrintGeneric(fmt.Sprintf("Dry Run (delete): %s", path))
+				log.Printf("INFO [fs-sync-server] Dry Run (delete): %s", path)
 			}
 		}
 		totalCount := len(uploadReq.Files) + len(uploadReq.ToDelete)
 		if totalCount == 0 {
-			u.PrintWarn("no files would be synced", nil)
+			log.Printf("WARN [fs-sync-server] no files would be synced")
 		} else {
-			u.PrintSuccess(fmt.Sprintf("%d file(s) would be synced", totalCount))
+			log.Printf("INFO [fs-sync-server] %d file(s) would be synced", totalCount)
 		}
 		w.WriteHeader(http.StatusOK)
 		s.shutdown()
@@ -183,19 +184,19 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	for _, file := range uploadReq.Files {
 		relPath := filepath.Clean(file.Path)
 		if strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
-			u.PrintWarn(fmt.Sprintf("Invalid path: %s", file.Path), nil)
+			log.Printf("WARN [fs-sync-server] Invalid path: %s", file.Path)
 			continue
 		}
 		fullPath := filepath.Join(s.cfg.SyncDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-			u.PrintError(fmt.Sprintf("Failed to create directory for %s", file.Path), err)
+			log.Printf("ERROR [fs-sync-server] Failed to create directory for %s: %v", file.Path, err)
 			continue
 		}
 		if err := os.WriteFile(fullPath, file.Content, 0644); err != nil {
-			u.PrintError(fmt.Sprintf("Failed to write %s", file.Path), err)
+			log.Printf("ERROR [fs-sync-server] Failed to write %s: %v", file.Path, err)
 			continue
 		}
-		u.PrintIndentedSuccess(fmt.Sprintf("Received: %s", file.Path))
+		log.Printf("INFO [fs-sync-server] Received: %s", file.Path)
 		count++
 	}
 
@@ -208,9 +209,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			}
 			fullPath := filepath.Join(s.cfg.SyncDir, relPath)
 			if err := os.RemoveAll(fullPath); err != nil {
-				u.PrintError(fmt.Sprintf("Failed to delete %s", path), err)
+				log.Printf("ERROR [fs-sync-server] Failed to delete %s: %v", path, err)
 			} else {
-				u.PrintIndentedSuccess(fmt.Sprintf("Deleted: %s", path))
+				log.Printf("INFO [fs-sync-server] Deleted: %s", path)
 				deletedCount++
 			}
 		}
@@ -218,9 +219,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	totalCount := count + deletedCount
 	if totalCount == 0 {
-		u.PrintWarn("no files were synced", nil)
+		log.Printf("WARN [fs-sync-server] no files were synced")
 	} else {
-		u.PrintSuccess(fmt.Sprintf("%d file(s) synced", totalCount))
+		log.Printf("INFO [fs-sync-server] %d file(s) synced", totalCount)
 	}
 	w.WriteHeader(http.StatusOK)
 	s.shutdown()
@@ -235,3 +236,4 @@ func (s *Server) getTLSConfig() (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 	}, nil
 }
+

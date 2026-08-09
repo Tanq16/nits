@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -92,11 +93,41 @@ Output file is generated automatically as <basename>.h265.<mp4|mkv>.`,
 			FPSDowngrade: videoEncodeFlags.fpsDowngrade,
 			NoVideo:      videoEncodeFlags.noVideo,
 		}
-		if err := videohandlers.RunSmartEncode(ctx, args[0], opts); err != nil {
+
+		var printed atomic.Bool
+		var firstTick atomic.Bool
+		firstTick.Store(true)
+
+		callbacks := videohandlers.EncodeCallbacks{
+			OnInfo: func(msg string) {
+				utils.PrintInfo(msg)
+			},
+			OnProgress: func(label string, percent int) {
+				if !firstTick.Swap(false) {
+					utils.ClearPreviousLine()
+				}
+				printed.Store(true)
+				utils.PrintProgress(label, percent)
+			},
+			OnProgressDone: func() {
+				if printed.Load() {
+					utils.ClearPreviousLine()
+				}
+			},
+			OnError: func(msg string) {
+				utils.PrintIndentedError(msg, nil)
+			},
+			OnSuccess: func(msg string) {
+				utils.PrintSuccess(msg)
+			},
+		}
+
+		if err := videohandlers.RunSmartEncode(ctx, args[0], opts, callbacks); err != nil {
 			utils.PrintFatal("Failed to encode video", err)
 		}
 	},
 }
+
 
 func init() {
 	videoEncodeCmd.Flags().StringVarP(&videoEncodeFlags.quality, "quality", "q", "medium", "Quality tier: very-high, high, medium, low")

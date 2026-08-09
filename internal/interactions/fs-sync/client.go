@@ -9,9 +9,52 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	u "github.com/tanq16/nits/utils"
 )
+
+type ClientCallbacks struct {
+	OnInfo        func(msg string)
+	OnGeneric     func(msg string)
+	OnItemSuccess func(msg string)
+	OnWarn        func(msg string, err error)
+	OnSuccess     func(msg string)
+	OnError       func(msg string, err error)
+}
+
+func (cb ClientCallbacks) info(msg string) {
+	if cb.OnInfo != nil {
+		cb.OnInfo(msg)
+	}
+}
+
+func (cb ClientCallbacks) generic(msg string) {
+	if cb.OnGeneric != nil {
+		cb.OnGeneric(msg)
+	}
+}
+
+func (cb ClientCallbacks) itemSuccess(msg string) {
+	if cb.OnItemSuccess != nil {
+		cb.OnItemSuccess(msg)
+	}
+}
+
+func (cb ClientCallbacks) warn(msg string, err error) {
+	if cb.OnWarn != nil {
+		cb.OnWarn(msg, err)
+	}
+}
+
+func (cb ClientCallbacks) success(msg string) {
+	if cb.OnSuccess != nil {
+		cb.OnSuccess(msg)
+	}
+}
+
+func (cb ClientCallbacks) err(msg string, err error) {
+	if cb.OnError != nil {
+		cb.OnError(msg, err)
+	}
+}
 
 type ClientConfig struct {
 	ServerAddr  string
@@ -51,17 +94,17 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Run() error {
+func (c *Client) Run(cb ClientCallbacks) error {
 	mode, err := c.fetchMode()
 	if err != nil {
 		return fmt.Errorf("failed to detect server mode: %w", err)
 	}
-	u.PrintInfo(fmt.Sprintf("Server mode: %s", mode))
+	cb.info(fmt.Sprintf("Server mode: %s", mode))
 	switch mode {
 	case "send":
-		return c.pullFromServer()
+		return c.pullFromServer(cb)
 	case "receive":
-		return c.pushToServer()
+		return c.pushToServer(cb)
 	default:
 		return fmt.Errorf("unknown server mode: %s", mode)
 	}
@@ -83,7 +126,7 @@ func (c *Client) fetchMode() (string, error) {
 	return modeResp.Mode, nil
 }
 
-func (c *Client) pullFromServer() error {
+func (c *Client) pullFromServer(cb ClientCallbacks) error {
 	serverManifest, err := c.fetchManifest()
 	if err != nil {
 		return fmt.Errorf("failed to fetch manifest: %w", err)
@@ -101,11 +144,11 @@ func (c *Client) pullFromServer() error {
 	toRequest, toDelete := c.compareManifests(filteredServer, localManifest)
 	if c.cfg.DryRun {
 		for _, path := range toRequest {
-			u.PrintGeneric(fmt.Sprintf("Dry Run: %s", path))
+			cb.generic(fmt.Sprintf("Dry Run: %s", path))
 		}
 		if c.cfg.DeleteExtra {
 			for _, path := range toDelete {
-				u.PrintGeneric(fmt.Sprintf("Dry Run (delete): %s", path))
+				cb.generic(fmt.Sprintf("Dry Run (delete): %s", path))
 			}
 		}
 		totalCount := len(toRequest)
@@ -113,43 +156,43 @@ func (c *Client) pullFromServer() error {
 			totalCount += len(toDelete)
 		}
 		if totalCount == 0 {
-			u.PrintWarn("no files would be synced", nil)
+			cb.warn("no files would be synced", nil)
 		} else {
-			u.PrintSuccess(fmt.Sprintf("%d file(s) would be synced", totalCount))
+			cb.success(fmt.Sprintf("%d file(s) would be synced", totalCount))
 		}
 		// Empty /files POST tells the one-shot server to shut down.
-		_, err = c.fetchFiles(nil)
+		_, err = c.fetchFiles(nil, cb)
 		return err
 	}
 
 	syncedCount := 0
 	if len(toRequest) > 0 {
-		syncedCount, err = c.fetchFiles(toRequest)
+		syncedCount, err = c.fetchFiles(toRequest, cb)
 		if err != nil {
 			return fmt.Errorf("failed to fetch files: %w", err)
 		}
 	} else {
-		if _, err = c.fetchFiles(nil); err != nil {
+		if _, err = c.fetchFiles(nil, cb); err != nil {
 			return fmt.Errorf("failed to signal server done: %w", err)
 		}
 	}
 	deletedCount := 0
 	if c.cfg.DeleteExtra && len(toDelete) > 0 {
-		deletedCount, err = c.deleteLocalFiles(toDelete)
+		deletedCount, err = c.deleteLocalFiles(toDelete, cb)
 		if err != nil {
 			return fmt.Errorf("failed to delete files: %w", err)
 		}
 	}
 	totalCount := syncedCount + deletedCount
 	if totalCount == 0 {
-		u.PrintWarn("no files were synced", nil)
+		cb.warn("no files were synced", nil)
 	} else {
-		u.PrintSuccess(fmt.Sprintf("%d file(s) synced", totalCount))
+		cb.success(fmt.Sprintf("%d file(s) synced", totalCount))
 	}
 	return nil
 }
 
-func (c *Client) pushToServer() error {
+func (c *Client) pushToServer(cb ClientCallbacks) error {
 	serverManifest, err := c.fetchManifest()
 	if err != nil {
 		return fmt.Errorf("failed to fetch server manifest: %w", err)
@@ -179,7 +222,7 @@ func (c *Client) pushToServer() error {
 		fullPath := filepath.Join(c.cfg.SyncDir, path)
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
-			u.PrintWarn(fmt.Sprintf("Failed to read %s", path), err)
+			cb.warn(fmt.Sprintf("Failed to read %s", path), err)
 			continue
 		}
 		files = append(files, FileContent{Path: path, Content: content})
@@ -205,13 +248,13 @@ func (c *Client) pushToServer() error {
 	}
 
 	if len(files) == 0 && len(toDelete) == 0 {
-		u.PrintWarn("no files to send", nil)
+		cb.warn("no files to send", nil)
 		return nil
 	}
 	for _, file := range files {
-		u.PrintIndentedSuccess(fmt.Sprintf("Sent: %s", file.Path))
+		cb.itemSuccess(fmt.Sprintf("Sent: %s", file.Path))
 	}
-	u.PrintSuccess(fmt.Sprintf("%d file(s) sent", len(files)))
+	cb.success(fmt.Sprintf("%d file(s) sent", len(files)))
 	return nil
 }
 
@@ -231,7 +274,7 @@ func (c *Client) fetchManifest() (map[string]string, error) {
 	return manifest.Files, nil
 }
 
-func (c *Client) fetchFiles(paths []string) (int, error) {
+func (c *Client) fetchFiles(paths []string, cb ClientCallbacks) (int, error) {
 	reqBody, _ := json.Marshal(FileRequest{Paths: paths})
 	resp, err := c.httpClient.Post(
 		c.cfg.ServerAddr+"/files",
@@ -259,7 +302,7 @@ func (c *Client) fetchFiles(paths []string) (int, error) {
 		if err := os.WriteFile(fullPath, file.Content, 0644); err != nil {
 			return count, fmt.Errorf("failed to write file %s: %w", file.Path, err)
 		}
-		u.PrintIndentedSuccess(fmt.Sprintf("Synced: %s", file.Path))
+		cb.itemSuccess(fmt.Sprintf("Synced: %s", file.Path))
 		count++
 	}
 	return count, nil
@@ -279,16 +322,17 @@ func (c *Client) compareManifests(server, local map[string]string) (toRequest, t
 	return
 }
 
-func (c *Client) deleteLocalFiles(paths []string) (int, error) {
+func (c *Client) deleteLocalFiles(paths []string, cb ClientCallbacks) (int, error) {
 	count := 0
 	for _, path := range paths {
 		fullPath := filepath.Join(c.cfg.SyncDir, path)
 		if err := os.RemoveAll(fullPath); err != nil {
-			u.PrintError(fmt.Sprintf("Failed to delete %s", path), err)
+			cb.err(fmt.Sprintf("Failed to delete %s", path), err)
 		} else {
-			u.PrintIndentedSuccess(fmt.Sprintf("Deleted: %s", path))
+			cb.itemSuccess(fmt.Sprintf("Deleted: %s", path))
 			count++
 		}
 	}
 	return count, nil
 }
+

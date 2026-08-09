@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+// FormatTimeAgo renders a duration as a short relative-time string (e.g. "5m ago").
+func FormatTimeAgo(d time.Duration) string {
+	return formatTimeAgo(d)
+}
+
 // formatTimeAgo renders a duration as a short relative-time string (e.g. "5m ago").
 // Negative durations (clock skew, future timestamps) are treated as "just now".
 func formatTimeAgo(d time.Duration) string {
@@ -26,3 +31,4 @@ func formatTimeAgo(d time.Duration) string {
 		return fmt.Sprintf("%dy ago", int(d/(365*24*time.Hour)))
 	}
 }
+

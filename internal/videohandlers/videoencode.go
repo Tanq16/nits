@@ -11,9 +11,45 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/tanq16/nits/utils"
 )
+
+type EncodeCallbacks struct {
+	OnInfo         func(msg string)
+	OnProgress     func(label string, percent int)
+	OnProgressDone func()
+	OnError        func(msg string)
+	OnSuccess      func(msg string)
+}
+
+func (cb EncodeCallbacks) info(msg string) {
+	if cb.OnInfo != nil {
+		cb.OnInfo(msg)
+	}
+}
+
+func (cb EncodeCallbacks) progress(label string, percent int) {
+	if cb.OnProgress != nil {
+		cb.OnProgress(label, percent)
+	}
+}
+
+func (cb EncodeCallbacks) progressDone() {
+	if cb.OnProgressDone != nil {
+		cb.OnProgressDone()
+	}
+}
+
+func (cb EncodeCallbacks) errorMsg(msg string) {
+	if cb.OnError != nil {
+		cb.OnError(msg)
+	}
+}
+
+func (cb EncodeCallbacks) success(msg string) {
+	if cb.OnSuccess != nil {
+		cb.OnSuccess(msg)
+	}
+}
 
 type SmartEncodeOptions struct {
 	Quality      string
@@ -41,23 +77,23 @@ type indexedStream struct {
 	stream Stream
 }
 
-func RunSmartEncode(ctx context.Context, inputFile string, opts SmartEncodeOptions) error {
+func RunSmartEncode(ctx context.Context, inputFile string, opts SmartEncodeOptions, cb EncodeCallbacks) error {
 	data, err := GetVideoInfo(inputFile)
 	if err != nil {
 		return err
 	}
 
-	args, outputFile, err := buildFFmpegArgs(inputFile, data, opts)
+	args, outputFile, err := buildFFmpegArgs(inputFile, data, opts, cb)
 	if err != nil {
 		return err
 	}
 
-	utils.PrintInfo(fmt.Sprintf("Command: ffmpeg %s", strings.Join(args, " ")))
+	cb.info(fmt.Sprintf("Command: ffmpeg %s", strings.Join(args, " ")))
 
-	return runEncode(ctx, outputFile, data, args)
+	return runEncode(ctx, outputFile, data, args, cb)
 }
 
-func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOptions) ([]string, string, error) {
+func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOptions, cb EncodeCallbacks) ([]string, string, error) {
 	args := []string{"-i", inputFile}
 
 	videoStreams := filterStreams(data.Streams, "video")
@@ -76,21 +112,21 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 
 	if opts.NoVideo {
 		videoFlags = []string{"-c:v", "copy"}
-		utils.PrintInfo("Video: copy (no re-encoding)")
+		cb.info("Video: copy (no re-encoding)")
 	} else {
 		videoFlags = []string{"-c:v", "libx265", "-crf", crf, "-fps_mode", "cfr"}
 
 		if videoStreams[0].stream.PixFmt == "yuv420p10le" {
 			videoFlags = append(videoFlags, "-pix_fmt", "yuv420p10le")
-			utils.PrintInfo("10-bit source detected, retaining pixel format")
+			cb.info("10-bit source detected, retaining pixel format")
 		}
 
 		if opts.FPSDowngrade {
 			videoFlags = append(videoFlags, "-r", "30")
-			utils.PrintInfo("FPS downgrade to 30 enabled")
+			cb.info("FPS downgrade to 30 enabled")
 		}
 
-		utils.PrintInfo(fmt.Sprintf("Video: libx265 CRF %s (%s quality, CFR)", crf, opts.Quality))
+		cb.info(fmt.Sprintf("Video: libx265 CRF %s (%s quality, CFR)", crf, opts.Quality))
 	}
 
 	var audioFlags []string
@@ -111,12 +147,12 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 			lang = "und"
 		}
 		if selected.stream.Tags.Title != "" {
-			utils.PrintInfo(fmt.Sprintf("Audio: stream #%d (%s — %s) → AAC stereo 48kHz", selected.stream.Index, lang, selected.stream.Tags.Title))
+			cb.info(fmt.Sprintf("Audio: stream #%d (%s — %s) → AAC stereo 48kHz", selected.stream.Index, lang, selected.stream.Tags.Title))
 		} else {
-			utils.PrintInfo(fmt.Sprintf("Audio: stream #%d (%s) → AAC stereo 48kHz", selected.stream.Index, lang))
+			cb.info(fmt.Sprintf("Audio: stream #%d (%s) → AAC stereo 48kHz", selected.stream.Index, lang))
 		}
 	} else {
-		utils.PrintInfo("Audio: none")
+		cb.info("Audio: none")
 	}
 
 	var subtitleFlags []string
@@ -139,13 +175,13 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 		if hasBitmap {
 			outputExt = ".mkv"
 			subtitleFlags = append(subtitleFlags, "-c:s", "copy")
-			utils.PrintInfo(fmt.Sprintf("Subtitles: %d stream(s) (bitmap detected → MKV, copy)", len(subStreams)))
+			cb.info(fmt.Sprintf("Subtitles: %d stream(s) (bitmap detected → MKV, copy)", len(subStreams)))
 		} else {
 			subtitleFlags = append(subtitleFlags, "-c:s", "mov_text")
-			utils.PrintInfo(fmt.Sprintf("Subtitles: %d stream(s) (text → MP4, mov_text)", len(subStreams)))
+			cb.info(fmt.Sprintf("Subtitles: %d stream(s) (text → MP4, mov_text)", len(subStreams)))
 		}
 	} else {
-		utils.PrintInfo("Subtitles: none")
+		cb.info("Subtitles: none")
 	}
 
 	dir := filepath.Dir(inputFile)
@@ -158,7 +194,7 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 	args = append(args, "-avoid_negative_ts", "make_zero")
 	args = append(args, outputFile)
 
-	utils.PrintInfo(fmt.Sprintf("Output: %s", outputFile))
+	cb.info(fmt.Sprintf("Output: %s", outputFile))
 
 	return args, outputFile, nil
 }
@@ -208,7 +244,7 @@ func isRejectedAudio(s Stream) bool {
 	return false
 }
 
-func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmpegArgs []string) error {
+func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmpegArgs []string, cb EncodeCallbacks) error {
 	totalDurationSecs := 0.0
 	if data.Format.Duration != "" {
 		totalDurationSecs, _ = strconv.ParseFloat(data.Format.Duration, 64)
@@ -241,37 +277,30 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 			line := scanner.Text()
 			if line != "" && isErrorLine(line) {
 				hasErrors = true
-				utils.PrintIndentedError(line, nil)
+				cb.errorMsg(line)
 			}
 		}
 		if err := scanner.Err(); err != nil {
 			hasErrors = true
-			utils.PrintIndentedError(fmt.Sprintf("stderr stream error: %v", err), nil)
+			cb.errorMsg(fmt.Sprintf("stderr stream error: %v", err))
 		}
 		errorChan <- hasErrors
 	}()
 
 	label := filepath.Base(outputFile)
-	utils.PrintInfo(fmt.Sprintf("Encoding: %s | Duration: %s", label, FormatDuration(totalDurationSecs)))
+	cb.info(fmt.Sprintf("Encoding: %s | Duration: %s", label, FormatDuration(totalDurationSecs)))
 
 	var currentPercent atomic.Int64
 	done := make(chan struct{})
-	var printed atomic.Bool
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
-		firstTick := true
 		for {
 			select {
 			case <-done:
 				return
 			case <-ticker.C:
-				if !firstTick {
-					utils.ClearPreviousLine()
-				}
-				firstTick = false
-				printed.Store(true)
-				utils.PrintProgress(label, int(currentPercent.Load()))
+				cb.progress(label, int(currentPercent.Load()))
 			}
 		}
 	}()
@@ -298,13 +327,11 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 		}
 	}
 	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		utils.PrintIndentedError(fmt.Sprintf("progress stream error: %v", err), nil)
+		cb.errorMsg(fmt.Sprintf("progress stream error: %v", err))
 	}
 
 	close(done)
-	if printed.Load() {
-		utils.ClearPreviousLine()
-	}
+	cb.progressDone()
 
 	cmdErr := cmd.Wait()
 	errorsDetected := <-errorChan
@@ -320,7 +347,7 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 		return fmt.Errorf("encoding completed with errors (see messages above)")
 	}
 
-	utils.PrintSuccess(fmt.Sprintf("Encoding completed in %s", time.Since(startTime).Round(time.Second)))
+	cb.success(fmt.Sprintf("Encoding completed in %s", time.Since(startTime).Round(time.Second)))
 	return nil
 }
 
@@ -334,3 +361,4 @@ func isErrorLine(line string) bool {
 	}
 	return false
 }
+

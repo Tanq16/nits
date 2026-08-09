@@ -1,6 +1,8 @@
 package genericsCmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/tanq16/nits/internal/generics"
@@ -23,8 +25,25 @@ Examples:
 	Run: func(cmd *cobra.Command, args []string) {
 		converterType := args[0]
 		input := args[1]
-		if err := generics.ConvertData(converterType, input); err != nil {
+		res, err := generics.ConvertData(converterType, input)
+		if err != nil {
 			u.PrintFatal("conversion failed", err)
+		}
+		if res.OutputFile != "" {
+			u.PrintSuccess(fmt.Sprintf("Docker run command converted to Docker Compose: %s", res.OutputFile))
+		}
+		if len(res.Commands) > 0 {
+			u.PrintInfo("Docker run commands for services in Docker Compose file:")
+			for _, cmdStr := range res.Commands {
+				u.PrintSuccess(cmdStr)
+			}
+		}
+		if res.Output != "" {
+			u.PrintGeneric(res.Output)
+		}
+		for _, table := range res.Tables {
+			u.PrintTable(table.Headers, table.Rows)
 		}
 	},
 }
+
