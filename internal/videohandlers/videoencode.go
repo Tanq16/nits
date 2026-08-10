@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -51,83 +52,107 @@ func (cb EncodeCallbacks) success(msg string) {
 	}
 }
 
-type SmartEncodeOptions struct {
-	Quality      string
-	FPSDowngrade bool
-	NoVideo      bool
+type OptimizeResult struct {
+	InputFile   string
+	OutputFile  string
+	InputBytes  int64
+	OutputBytes int64
+	DurationSec float64
+	OrigWidth   int
+	OrigHeight  int
+	Scaled      bool
+	TimeTaken   time.Duration
 }
-
-var qualityCRF = map[string]string{
-	"very-high": "22",
-	"high":      "24",
-	"medium":    "26",
-	"low":       "28",
-}
-
-var bitmapSubCodecs = map[string]bool{
-	"hdmv_pgs_subtitle": true,
-	"vobsub":            true,
-	"dvd_subtitle":      true,
-}
-
-var commentaryRegex = regexp.MustCompile(`(?i)commentary|director|cast`)
 
 type indexedStream struct {
 	relIdx int
 	stream Stream
 }
 
-func RunSmartEncode(ctx context.Context, inputFile string, opts SmartEncodeOptions, cb EncodeCallbacks) error {
-	data, err := GetVideoInfo(inputFile)
+var commentaryRegex = regexp.MustCompile(`(?i)commentary|director|cast`)
+
+func RunVideoOptimize(ctx context.Context, inputFile string, cb EncodeCallbacks) (*OptimizeResult, error) {
+	inputStat, err := os.Stat(inputFile)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to read input file: %w", err)
 	}
 
-	args, outputFile, err := buildFFmpegArgs(inputFile, data, opts, cb)
+	data, err := GetVideoInfo(inputFile)
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	args, outputFile, origWidth, origHeight, scaled, err := buildFFmpegArgs(inputFile, data, cb)
+	if err != nil {
+		return nil, err
 	}
 
 	cb.info(fmt.Sprintf("Command: ffmpeg %s", strings.Join(args, " ")))
 
-	return runEncode(ctx, outputFile, data, args, cb)
+	startTime := time.Now()
+	if err := runEncode(ctx, outputFile, data, args, cb); err != nil {
+		return nil, err
+	}
+
+	outputStat, err := os.Stat(outputFile)
+	var outputBytes int64
+	if err == nil {
+		outputBytes = outputStat.Size()
+	}
+
+	durationSec := 0.0
+	if data.Format.Duration != "" {
+		durationSec, _ = strconv.ParseFloat(data.Format.Duration, 64)
+	}
+
+	return &OptimizeResult{
+		InputFile:   inputFile,
+		OutputFile:  outputFile,
+		InputBytes:  inputStat.Size(),
+		OutputBytes: outputBytes,
+		DurationSec: durationSec,
+		OrigWidth:   origWidth,
+		OrigHeight:  origHeight,
+		Scaled:      scaled,
+		TimeTaken:   time.Since(startTime),
+	}, nil
 }
 
-func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOptions, cb EncodeCallbacks) ([]string, string, error) {
+func buildFFmpegArgs(inputFile string, data *FFProbeOutput, cb EncodeCallbacks) ([]string, string, int, int, bool, error) {
 	args := []string{"-i", inputFile}
 
 	videoStreams := filterStreams(data.Streams, "video")
 	if len(videoStreams) == 0 {
-		return nil, "", fmt.Errorf("no video streams found in input")
+		return nil, "", 0, 0, false, fmt.Errorf("no video streams found in input")
 	}
+
+	primaryVideo := videoStreams[0].stream
+	origWidth := primaryVideo.Width
+	origHeight := primaryVideo.Height
 
 	args = append(args, "-map", "0:v:0")
 
-	crf, ok := qualityCRF[opts.Quality]
-	if !ok {
-		crf = qualityCRF["medium"]
-	}
-
 	var videoFlags []string
+	scaled := false
 
-	if opts.NoVideo {
-		videoFlags = []string{"-c:v", "copy"}
-		cb.info("Video: copy (no re-encoding)")
+	if origWidth > 1920 || origHeight > 1080 {
+		videoFlags = append(videoFlags, "-vf", "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2")
+		scaled = true
+		cb.info(fmt.Sprintf("Resolution: %dx%d downscaled to fit 1080p max", origWidth, origHeight))
 	} else {
-		videoFlags = []string{"-c:v", "libx265", "-crf", crf, "-fps_mode", "cfr"}
-
-		if videoStreams[0].stream.PixFmt == "yuv420p10le" {
-			videoFlags = append(videoFlags, "-pix_fmt", "yuv420p10le")
-			cb.info("10-bit source detected, retaining pixel format")
-		}
-
-		if opts.FPSDowngrade {
-			videoFlags = append(videoFlags, "-r", "30")
-			cb.info("FPS downgrade to 30 enabled")
-		}
-
-		cb.info(fmt.Sprintf("Video: libx265 CRF %s (%s quality, CFR)", crf, opts.Quality))
+		cb.info(fmt.Sprintf("Resolution: %dx%d (retained)", origWidth, origHeight))
 	}
+
+	videoFlags = append(videoFlags, "-c:v", "libx265", "-crf", "28", "-preset", "medium", "-fps_mode", "cfr")
+
+	if primaryVideo.PixFmt == "yuv420p10le" {
+		videoFlags = append(videoFlags, "-pix_fmt", "yuv420p10le")
+		cb.info("Pixel format: 10-bit source detected (yuv420p10le)")
+	} else {
+		videoFlags = append(videoFlags, "-pix_fmt", "yuv420p")
+	}
+
+	cb.info("Video: libx265 CRF 28 (preset medium, CFR)")
 
 	var audioFlags []string
 	audioStreams := filterStreams(data.Streams, "audio")
@@ -135,21 +160,17 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 	if len(audioStreams) > 0 {
 		selectedIdx := selectAudioStream(audioStreams)
 		args = append(args, "-map", fmt.Sprintf("0:a:%d", selectedIdx))
+		audioFlags = append(audioFlags, "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000")
 
 		selected := audioStreams[selectedIdx]
-		// Always re-encode audio to generate fresh timestamps from the encoder.
-		// Copying audio preserves source timestamp imprecisions that cause A/V
-		// drift in browsers (which lack real-time clock correction unlike VLC).
-		audioFlags = append(audioFlags, "-c:a", "aac", "-ac", "2", "-ar", "48000")
-
 		lang := selected.stream.Tags.Language
 		if lang == "" {
 			lang = "und"
 		}
 		if selected.stream.Tags.Title != "" {
-			cb.info(fmt.Sprintf("Audio: stream #%d (%s — %s) → AAC stereo 48kHz", selected.stream.Index, lang, selected.stream.Tags.Title))
+			cb.info(fmt.Sprintf("Audio: stream #%d (%s — %s) → AAC stereo 128k 48kHz", selected.stream.Index, lang, selected.stream.Tags.Title))
 		} else {
-			cb.info(fmt.Sprintf("Audio: stream #%d (%s) → AAC stereo 48kHz", selected.stream.Index, lang))
+			cb.info(fmt.Sprintf("Audio: stream #%d (%s) → AAC stereo 128k 48kHz", selected.stream.Index, lang))
 		}
 	} else {
 		cb.info("Audio: none")
@@ -157,46 +178,30 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts SmartEncodeOpti
 
 	var subtitleFlags []string
 	subStreams := filterStreams(data.Streams, "subtitle")
-	outputExt := ".mp4"
 
 	if len(subStreams) > 0 {
-		hasBitmap := false
-		for _, ss := range subStreams {
-			if bitmapSubCodecs[ss.stream.CodecName] {
-				hasBitmap = true
-				break
-			}
-		}
-
 		for i := range subStreams {
 			args = append(args, "-map", fmt.Sprintf("0:s:%d", i))
 		}
-
-		if hasBitmap {
-			outputExt = ".mkv"
-			subtitleFlags = append(subtitleFlags, "-c:s", "copy")
-			cb.info(fmt.Sprintf("Subtitles: %d stream(s) (bitmap detected → MKV, copy)", len(subStreams)))
-		} else {
-			subtitleFlags = append(subtitleFlags, "-c:s", "mov_text")
-			cb.info(fmt.Sprintf("Subtitles: %d stream(s) (text → MP4, mov_text)", len(subStreams)))
-		}
-	} else {
-		cb.info("Subtitles: none")
+		subtitleFlags = append(subtitleFlags, "-c:s", "mov_text")
+		cb.info(fmt.Sprintf("Subtitles: %d stream(s) → mov_text", len(subStreams)))
 	}
 
 	dir := filepath.Dir(inputFile)
 	base := strings.TrimSuffix(filepath.Base(inputFile), filepath.Ext(inputFile))
-	outputFile := filepath.Join(dir, base+".h265"+outputExt)
+	outputFile := filepath.Join(dir, base+".optimized.mp4")
+
+	if outputFile == inputFile || strings.HasSuffix(base, ".optimized") {
+		cleanBase := strings.TrimSuffix(base, ".optimized")
+		outputFile = filepath.Join(dir, cleanBase+".optimized.1.mp4")
+	}
 
 	args = append(args, videoFlags...)
 	args = append(args, audioFlags...)
 	args = append(args, subtitleFlags...)
-	args = append(args, "-avoid_negative_ts", "make_zero")
-	args = append(args, outputFile)
+	args = append(args, "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", outputFile)
 
-	cb.info(fmt.Sprintf("Output: %s", outputFile))
-
-	return args, outputFile, nil
+	return args, outputFile, origWidth, origHeight, scaled, nil
 }
 
 func filterStreams(streams []Stream, codecType string) []indexedStream {
@@ -264,7 +269,6 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
-	startTime := time.Now()
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
@@ -288,8 +292,6 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 	}()
 
 	label := filepath.Base(outputFile)
-	cb.info(fmt.Sprintf("Encoding: %s | Duration: %s", label, FormatDuration(totalDurationSecs)))
-
 	var currentPercent atomic.Int64
 	done := make(chan struct{})
 	go func() {
@@ -347,7 +349,6 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 		return fmt.Errorf("encoding completed with errors (see messages above)")
 	}
 
-	cb.success(fmt.Sprintf("Encoding completed in %s", time.Since(startTime).Round(time.Second)))
 	return nil
 }
 
@@ -361,4 +362,3 @@ func isErrorLine(line string) bool {
 	}
 	return false
 }
-

@@ -19,7 +19,7 @@ A more robust tool is [anbu](https://github.com/tanq16/anbu). As and when I find
 |----------|----------|-------------|
 | Files | `file-organizer`, `file-unzipper`, `file-json-uniq`, `manual-rename`/`mrename` | File management, organization, and interactive rename |
 | Images | `img-webp`, `img-dedup` | Image compression and duplicate detection |
-| Video | `video-info`, `video-encode` | Video file analysis and encoding using ffmpeg |
+| Video | `video-optimize` / `video-opt` | Video size optimization (H.265 CPU, max 1080p, CRF 28, AAC 128k) |
 | Data | `convert`, `neo4j` | Format conversion and Neo4j Cypher queries |
 | Productivity | `tasks` | Lightweight local task tracker with pending/done status |
 | Diagrams | `mermaid-svg`, `markdown`/`md` | Mermaid SVG conversion and markdown viewer |
@@ -163,46 +163,22 @@ nits img-dedup
 nits img-dedup --hamming-distance 5
 ```
 
-### Video Analysis
+### Video Optimization
 
-#### `video-info`
+#### `video-optimize` / `video-opt`
 
-Display detailed information about a video file using ffprobe.
+Optimize a video file for maximum space reduction using H.265 CPU encoding (`libx265`, CRF 28, preset medium). Videos $> 1080\text{p}$ (e.g. 4K, 1440p) are automatically downscaled to fit within $1920\times 1080$ preserving aspect ratio; lower resolutions are kept at native size without resampling. Audio is encoded to transparent 128 kbps AAC stereo.
 
 ```bash
-nits video-info <file>
+nits video-optimize <file>
 ```
 
 **Examples:**
 
 ```bash
-# Show video info
-nits video-info movie.mp4
-```
-
-#### `video-encode`
-
-Smart encode video to H.265 with automatic stream selection. Probes the input file, selects the best audio stream (rejecting commentary), keeps all subtitles, picks the right container (MP4 or MKV), and encodes video to libx265 with the chosen quality tier. Output file is generated automatically as `<basename>.h265.<mp4|mkv>`.
-
-```bash
-nits video-encode <file> [--quality TIER] [--fps-downgrade]
-```
-
-**Flags:**
-- `--quality, -q` - Quality tier: very-high, high, medium, low (default: medium)
-- `--fps-downgrade` - Downgrade framerate to 30 fps
-
-**Examples:**
-
-```bash
-# Encode with default medium quality
-nits video-encode movie.mkv
-
-# Encode with high quality
-nits video-encode movie.mkv --quality high
-
-# Encode with FPS downgrade to 30
-nits video-encode movie.mkv --fps-downgrade
+# Optimize a video file
+nits video-optimize movie.mkv
+nits video-opt clip.mp4
 ```
 
 ### Diagrams

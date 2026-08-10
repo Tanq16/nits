@@ -5,94 +5,34 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
+	"path/filepath"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tanq16/nits/internal/videohandlers"
 	"github.com/tanq16/nits/utils"
 )
 
-var videoInfoCmd = &cobra.Command{
-	Use:   "video-info <file>",
-	Short: "Display detailed information about a video file using ffprobe",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		utils.PrintRunning(fmt.Sprintf("Probing %s...", args[0]))
-		data, err := videohandlers.GetVideoInfo(args[0])
-		utils.ClearLines(1)
-		if err != nil {
-			utils.PrintFatal("Failed to get video info", err)
-		}
+var videoOptimizeCmd = &cobra.Command{
+	Use:     "video-optimize <file>",
+	Aliases: []string{"video-opt"},
+	Short:   "Optimize video file to H.265 (max 1080p, CRF 28, AAC 128k)",
+	Long: `Optimizes a video file for size reduction using CPU H.265 encoding.
+Videos with resolutions higher than 1080p are downscaled to fit within 1080p,
+while lower resolutions are preserved. Encodes audio to 128 kbps AAC stereo.
 
-		sizeBytes, _ := strconv.ParseFloat(data.Format.Size, 64)
-		durationSec, _ := strconv.ParseFloat(data.Format.Duration, 64)
-		bitrate, _ := strconv.ParseFloat(data.Format.BitRate, 64)
-
-		utils.PrintInfo("Container overview:")
-		utils.PrintTable([]string{"Property", "Value"}, [][]string{
-			{"Container", data.Format.FormatName},
-			{"Size", videohandlers.FormatSize(sizeBytes)},
-			{"Duration", videohandlers.FormatDuration(durationSec)},
-			{"Bitrate", videohandlers.FormatBitrate(bitrate)},
-		})
-
-		var streamRows [][]string
-		for _, s := range data.Streams {
-			details := ""
-			switch s.CodecType {
-			case "video":
-				fps := videohandlers.ParseFrameRate(s.AvgFrameRate)
-				details = fmt.Sprintf("%dx%d @ %s fps (%s)", s.Width, s.Height, fps, s.PixFmt)
-			case "audio":
-				details = fmt.Sprintf("%d ch (%s) @ %s Hz", s.Channels, s.ChannelLayout, s.SampleRate)
-			case "subtitle":
-				details = s.Tags.Title
-			}
-			lang := s.Tags.Language
-			if lang == "" {
-				lang = "und"
-			}
-			streamRows = append(streamRows, []string{
-				fmt.Sprintf("#%d", s.Index),
-				strings.ToUpper(s.CodecType),
-				strings.ToUpper(s.CodecName),
-				details,
-				strings.ToUpper(lang),
-			})
-		}
-
-		utils.PrintInfo("Streams:")
-		utils.PrintTable([]string{"Index", "Type", "Codec", "Details", "Lang"}, streamRows)
-	},
-}
-
-var videoEncodeFlags struct {
-	quality      string
-	fpsDowngrade bool
-	noVideo      bool
-}
-
-var videoEncodeCmd = &cobra.Command{
-	Use:   "video-encode <file>",
-	Short: "Smart encode video to H.265 with automatic stream selection",
-	Long: `Probes the input file, selects the best audio stream (rejecting commentary),
-keeps all subtitles, picks the right container (MP4 or MKV), and encodes
-video to libx265 with the chosen quality tier.
-
-Output file is generated automatically as <basename>.h265.<mp4|mkv>.`,
+Output file is saved as <basename>.optimized.mp4.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
-		opts := videohandlers.SmartEncodeOptions{
-			Quality:      videoEncodeFlags.quality,
-			FPSDowngrade: videoEncodeFlags.fpsDowngrade,
-			NoVideo:      videoEncodeFlags.noVideo,
-		}
+		inputFile := args[0]
+		inputBase := filepath.Base(inputFile)
+
+		utils.PrintRunning(fmt.Sprintf("Optimizing %s...", inputBase))
 
 		var printed atomic.Bool
 		var firstTick atomic.Bool
@@ -117,23 +57,46 @@ Output file is generated automatically as <basename>.h265.<mp4|mkv>.`,
 			OnError: func(msg string) {
 				utils.PrintIndentedError(msg, nil)
 			},
-			OnSuccess: func(msg string) {
-				utils.PrintSuccess(msg)
-			},
 		}
 
-		if err := videohandlers.RunSmartEncode(ctx, args[0], opts, callbacks); err != nil {
-			utils.PrintFatal("Failed to encode video", err)
+		res, err := videohandlers.RunVideoOptimize(ctx, inputFile, callbacks)
+		utils.ClearLines(1)
+		if err != nil {
+			utils.PrintFatal("Failed to optimize video", err)
 		}
+
+		savedBytes := res.InputBytes - res.OutputBytes
+		savedPct := 0.0
+		if res.InputBytes > 0 {
+			savedPct = float64(savedBytes) / float64(res.InputBytes) * 100
+		}
+
+		outputBase := filepath.Base(res.OutputFile)
+		utils.PrintSuccess(fmt.Sprintf("Optimized %s in %s (saved %.1f%%)", outputBase, res.TimeTaken.Round(time.Second), savedPct))
+
+		resStr := fmt.Sprintf("%dx%d", res.OrigWidth, res.OrigHeight)
+		if res.Scaled {
+			resStr += " → max 1080p"
+		} else {
+			resStr += " (retained)"
+		}
+
+		spaceSavedStr := fmt.Sprintf("%s (%.1f%%)", videohandlers.FormatSize(float64(savedBytes)), savedPct)
+		if savedBytes < 0 {
+			spaceSavedStr = fmt.Sprintf("+%s", videohandlers.FormatSize(float64(-savedBytes)))
+		}
+
+		utils.PrintTable([]string{"Property", "Value"}, [][]string{
+			{"Input Size", videohandlers.FormatSize(float64(res.InputBytes))},
+			{"Optimized Size", videohandlers.FormatSize(float64(res.OutputBytes))},
+			{"Space Saved", spaceSavedStr},
+			{"Resolution", resStr},
+			{"Duration", videohandlers.FormatDuration(res.DurationSec)},
+			{"Output File", res.OutputFile},
+		})
 	},
 }
 
-
 func init() {
-	videoEncodeCmd.Flags().StringVarP(&videoEncodeFlags.quality, "quality", "q", "medium", "Quality tier: very-high, high, medium, low")
-	videoEncodeCmd.Flags().BoolVar(&videoEncodeFlags.fpsDowngrade, "fps-downgrade", false, "Downgrade framerate to 30 fps")
-	videoEncodeCmd.Flags().BoolVarP(&videoEncodeFlags.noVideo, "no-video", "V", false, "Copy video stream as-is without re-encoding")
-
-	rootCmd.AddCommand(videoInfoCmd)
-	rootCmd.AddCommand(videoEncodeCmd)
+	rootCmd.AddCommand(videoOptimizeCmd)
 }
