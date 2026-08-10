@@ -3,7 +3,6 @@ package imagehandlers
 import (
 	"cmp"
 	"context"
-	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
@@ -14,8 +13,6 @@ import (
 	"sync"
 
 	"github.com/corona10/goimagehash"
-	"github.com/rs/zerolog/log"
-	"github.com/tanq16/nits/utils"
 	_ "golang.org/x/image/webp"
 )
 
@@ -29,30 +26,25 @@ type ImageInfo struct {
 	FileSize int64
 }
 
-func RunImgDedupe(ctx context.Context, maxHammingDistance int, workers int) error {
+func FindDuplicates(ctx context.Context, maxHammingDistance int, workers int) ([][]*ImageInfo, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return nil, err
 	}
-	log.Debug().Str("directory", dir).Msg("Scanning images")
 	images, err := scanImages(ctx, dir, workers)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(images) == 0 {
-		utils.PrintInfo("No images found")
-		return nil
+		return nil, nil
 	}
-	log.Debug().Int("count", len(images)).Msg("Images scanned")
-	groups := groupDuplicates(images, maxHammingDistance)
-	printResults(groups)
-	return nil
+	return groupDuplicates(images, maxHammingDistance), nil
 }
 
 func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read directory: %w", err)
+		return nil, err
 	}
 	var paths []string
 	for _, entry := range entries {
@@ -107,13 +99,11 @@ func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, err
 func processImage(path string) *ImageInfo {
 	file, err := os.Open(path)
 	if err != nil {
-		log.Error().Err(err).Str("file", path).Msg("Failed to open file")
 		return nil
 	}
 	defer file.Close()
 	stat, err := file.Stat()
 	if err != nil {
-		log.Error().Err(err).Str("file", path).Msg("Failed to stat file")
 		return nil
 	}
 	img, _, err := image.Decode(file)
@@ -122,7 +112,6 @@ func processImage(path string) *ImageInfo {
 	}
 	hash, err := goimagehash.PerceptionHash(img)
 	if err != nil {
-		log.Error().Err(err).Str("file", path).Msg("Failed to generate hash")
 		return nil
 	}
 	bounds := img.Bounds()
@@ -191,29 +180,4 @@ func groupDuplicates(images []*ImageInfo, maxHammingDistance int) [][]*ImageInfo
 		}
 	}
 	return groups
-}
-
-func printResults(groups [][]*ImageInfo) {
-	if len(groups) == 0 {
-		utils.PrintInfo("No duplicate images found")
-		return
-	}
-	utils.PrintInfo(fmt.Sprintf("Found %d sets of duplicates", len(groups)))
-	for i, group := range groups {
-		best := group[0]
-		duplicates := group[1:]
-		utils.PrintGeneric(fmt.Sprintf("SET #%d", i+1))
-		utils.PrintGeneric(fmt.Sprintf("  - KEEP  : %s (%dx%d)", best.Filename, best.Width, best.Height))
-		var dupNames []string
-		for _, d := range duplicates {
-			dupNames = append(dupNames, fmt.Sprintf("%s (%dx%d)", d.Filename, d.Width, d.Height))
-		}
-		utils.PrintGeneric(fmt.Sprintf("  - DELETE: %s", strings.Join(dupNames, ", ")))
-		cmdStr := "rm"
-		for _, d := range duplicates {
-			cmdStr += fmt.Sprintf(" %q", d.Filename)
-		}
-		utils.PrintGeneric(fmt.Sprintf("  - CMD   : %s", cmdStr))
-		utils.PrintGeneric("")
-	}
 }

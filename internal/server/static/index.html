@@ -135,12 +135,32 @@ flowchart LR
                 return;
             }
 
-            const theme = useDarkBg ? 'dark' : 'default';
             mermaid.initialize({
                 startOnLoad: false,
                 securityLevel: 'loose',
-                theme,
-                htmlLabels: false
+                theme: 'base',
+                htmlLabels: false,
+                themeVariables: {
+                    darkMode: useDarkBg,
+                    background: useDarkBg ? '#1e1e2e' : '#eff1f5',
+                    mainBkg: useDarkBg ? '#1e1e2e' : '#eff1f5',
+                    primaryColor: useDarkBg ? '#313244' : '#ccd0da',
+                    primaryTextColor: useDarkBg ? '#cdd6f4' : '#4c4f69',
+                    primaryBorderColor: useDarkBg ? '#89b4fa' : '#1e66f5',
+                    secondaryColor: useDarkBg ? '#45475a' : '#bcc0cc',
+                    secondaryTextColor: useDarkBg ? '#cdd6f4' : '#4c4f69',
+                    secondaryBorderColor: useDarkBg ? '#7f849c' : '#7c7f93',
+                    tertiaryColor: useDarkBg ? '#313244' : '#ccd0da',
+                    tertiaryTextColor: useDarkBg ? '#cdd6f4' : '#4c4f69',
+                    tertiaryBorderColor: useDarkBg ? '#585b70' : '#8c8fa1',
+                    lineColor: useDarkBg ? '#89b4fa' : '#1e66f5',
+                    arrowheadColor: useDarkBg ? '#89b4fa' : '#1e66f5',
+                    textColor: useDarkBg ? '#cdd6f4' : '#4c4f69',
+                    titleColor: useDarkBg ? '#cba6f7' : '#8839ef',
+                    nodeBkg: useDarkBg ? '#313244' : '#ccd0da',
+                    nodeBorder: useDarkBg ? '#89b4fa' : '#1e66f5',
+                    nodeTextColor: useDarkBg ? '#cdd6f4' : '#4c4f69',
+                }
             });
 
             try {

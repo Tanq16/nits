@@ -6,13 +6,12 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
-	u "github.com/tanq16/nits/utils"
 )
 
-func convertDockerToCompose(input string) error {
+func convertDockerToCompose(input string) (*ConvertResult, error) {
 	input = strings.TrimSpace(input)
 	if !strings.HasPrefix(input, "docker run") {
-		return fmt.Errorf("invalid docker run command: must start with 'docker run'")
+		return nil, fmt.Errorf("invalid docker run command: must start with 'docker run'")
 	}
 	composeConfig := map[string]any{
 		"services": map[string]any{
@@ -31,12 +30,12 @@ func convertDockerToCompose(input string) error {
 	booleanFlags := map[string]struct{}{
 		"-d": {}, "--detach": {},
 		"--rm": {},
-		"-i": {}, "--interactive": {},
+		"-i":   {}, "--interactive": {},
 		"-t": {}, "--tty": {},
 		"-it": {}, "-ti": {},
-		"--init": {},
+		"--init":       {},
 		"--privileged": {},
-		"--read-only": {},
+		"--read-only":  {},
 	}
 
 	for i := range parts {
@@ -124,28 +123,27 @@ func convertDockerToCompose(input string) error {
 
 	yamlData, err := yaml.Marshal(composeConfig)
 	if err != nil {
-		return fmt.Errorf("failed to generate YAML: %w", err)
+		return nil, fmt.Errorf("failed to generate YAML: %w", err)
 	}
 	outputFile := "docker-compose.yml"
 	if err := os.WriteFile(outputFile, yamlData, 0644); err != nil {
-		return fmt.Errorf("failed to write output file: %w", err)
+		return nil, fmt.Errorf("failed to write output file: %w", err)
 	}
-	u.PrintSuccess(fmt.Sprintf("Docker run command converted to Docker Compose: %s", outputFile))
-	return nil
+	return &ConvertResult{OutputFile: outputFile}, nil
 }
 
-func convertComposeToDocker(inputFile string) error {
+func convertComposeToDocker(inputFile string) (*ConvertResult, error) {
 	data, err := os.ReadFile(inputFile)
 	if err != nil {
-		return fmt.Errorf("failed to read input file: %w", err)
+		return nil, fmt.Errorf("failed to read input file: %w", err)
 	}
 	var composeConfig map[string]any
 	if err := yaml.Unmarshal(data, &composeConfig); err != nil {
-		return fmt.Errorf("failed to parse YAML: %w", err)
+		return nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
 	services, ok := composeConfig["services"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("no services found in the Docker Compose file")
+		return nil, fmt.Errorf("no services found in the Docker Compose file")
 	}
 
 	var dockerCommands []string
@@ -184,12 +182,9 @@ func convertComposeToDocker(inputFile string) error {
 		}
 		dockerCommands = append(dockerCommands, command.String())
 	}
-	u.PrintInfo("Docker run commands for services in Docker Compose file:")
-	for _, cmd := range dockerCommands {
-		u.PrintSuccess(cmd)
-	}
-	return nil
+	return &ConvertResult{Commands: dockerCommands}, nil
 }
+
 
 func splitCommand(command string) []string {
 	var parts []string

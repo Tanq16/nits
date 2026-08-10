@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"sort"
 	"time"
-
-	u "github.com/tanq16/nits/utils"
 )
 
 type TaskStatus string
@@ -104,14 +102,40 @@ func nextTaskID(store *TaskStore) int {
 	return maxID + 1
 }
 
-func TasksList(showDone bool, filter string) error {
+func GetPendingTasks() ([]TaskEntry, error) {
 	store, err := loadTaskStore()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(store.Tasks) == 0 {
-		u.PrintInfo("No tasks found")
-		return nil
+	var pending []TaskEntry
+	for _, t := range store.Tasks {
+		if t.Status == TaskPending {
+			pending = append(pending, t)
+		}
+	}
+	sort.Slice(pending, func(i, j int) bool {
+		return pending[i].ID > pending[j].ID
+	})
+	return pending, nil
+}
+
+func GetAllTasks() ([]TaskEntry, error) {
+	store, err := loadTaskStore()
+	if err != nil {
+		return nil, err
+	}
+	all := make([]TaskEntry, len(store.Tasks))
+	copy(all, store.Tasks)
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].ID > all[j].ID
+	})
+	return all, nil
+}
+
+func GetFilteredTasks(showDone bool, filter string) ([]TaskEntry, error) {
+	store, err := loadTaskStore()
+	if err != nil {
+		return nil, err
 	}
 	sort.Slice(store.Tasks, func(i, j int) bool {
 		return store.Tasks[i].ID > store.Tasks[j].ID
@@ -120,16 +144,10 @@ func TasksList(showDone bool, filter string) error {
 	if filter != "" {
 		filterRe, err = regexp.Compile(filter)
 		if err != nil {
-			return fmt.Errorf("invalid filter regex: %w", err)
+			return nil, fmt.Errorf("invalid filter regex: %w", err)
 		}
 	}
-	var headers []string
-	if showDone {
-		headers = []string{"ID", "Task", "Status", "Added"}
-	} else {
-		headers = []string{"ID", "Task", "Added"}
-	}
-	var rows [][]string
+	var filtered []TaskEntry
 	for _, task := range store.Tasks {
 		if !showDone && task.Status == TaskDone {
 			continue
@@ -137,41 +155,18 @@ func TasksList(showDone bool, filter string) error {
 		if filterRe != nil && !filterRe.MatchString(task.Task) {
 			continue
 		}
-		timeAgo := formatTimeAgo(time.Since(task.CreatedAt))
-		if showDone {
-			rows = append(rows, []string{
-				fmt.Sprintf("%d", task.ID),
-				task.Task,
-				string(task.Status),
-				timeAgo,
-			})
-		} else {
-			rows = append(rows, []string{
-				fmt.Sprintf("%d", task.ID),
-				task.Task,
-				timeAgo,
-			})
-		}
+		filtered = append(filtered, task)
 	}
-	if len(rows) == 0 {
-		u.PrintInfo("No matching tasks")
-		return nil
-	}
-	u.PrintTable(headers, rows)
-	return nil
+	return filtered, nil
 }
 
-func TasksAdd() error {
-	task, err := u.PromptInput("Enter task:", "What needs to be done?")
-	if err != nil {
-		return err
-	}
+func TasksAdd(task string) (*TaskEntry, error) {
 	if task == "" {
-		return fmt.Errorf("no task provided")
+		return nil, fmt.Errorf("no task provided")
 	}
 	store, err := loadTaskStore()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	entry := TaskEntry{
 		ID:        nextTaskID(store),
@@ -181,10 +176,9 @@ func TasksAdd() error {
 	}
 	store.Tasks = append(store.Tasks, entry)
 	if err := saveTaskStore(store); err != nil {
-		return err
+		return nil, err
 	}
-	u.PrintSuccess(fmt.Sprintf("%s → added (ID: %d)", task, entry.ID))
-	return nil
+	return &entry, nil
 }
 
 func TasksDone(id int) error {
@@ -197,11 +191,7 @@ func TasksDone(id int) error {
 		return fmt.Errorf("task ID not found")
 	}
 	task.Status = TaskDone
-	if err := saveTaskStore(store); err != nil {
-		return err
-	}
-	u.PrintSuccess(fmt.Sprintf("marked done (ID: %d)", id))
-	return nil
+	return saveTaskStore(store)
 }
 
 func TasksDelete(id int) error {
@@ -215,9 +205,6 @@ func TasksDelete(id int) error {
 	if !removeTaskByID(store, id) {
 		return fmt.Errorf("failed to remove task")
 	}
-	if err := saveTaskStore(store); err != nil {
-		return err
-	}
-	u.PrintSuccess(fmt.Sprintf("deleted (ID: %d)", id))
-	return nil
+	return saveTaskStore(store)
 }
+

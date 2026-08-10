@@ -7,41 +7,40 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-
-	u "github.com/tanq16/nits/utils"
 )
 
-func urlToText(input string) error {
+func urlToText(input string) (*ConvertResult, error) {
 	decoded, err := url.QueryUnescape(input)
 	if err != nil {
-		return fmt.Errorf("failed to decode URL: %w", err)
+		return nil, fmt.Errorf("failed to decode URL: %w", err)
 	}
-	u.PrintGeneric(decoded)
-	return nil
+	return &ConvertResult{Output: decoded}, nil
 }
 
-func textToUrl(input string) error {
-	u.PrintGeneric(url.QueryEscape(input))
-	return nil
+func textToUrl(input string) (*ConvertResult, error) {
+	return &ConvertResult{Output: url.QueryEscape(input)}, nil
 }
 
-func jwtDecode(tokenString string) error {
+func jwtDecode(tokenString string) (*ConvertResult, error) {
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
-		return fmt.Errorf("invalid token format: expected 3 parts separated by '.'")
+		return nil, fmt.Errorf("invalid token format: expected 3 parts separated by '.'")
 	}
 	header, err := jwtDecodeSegment(parts[0])
 	if err != nil {
-		return fmt.Errorf("failed to decode header: %w", err)
+		return nil, fmt.Errorf("failed to decode header: %w", err)
 	}
 	payload, err := jwtDecodeSegment(parts[1])
 	if err != nil {
-		return fmt.Errorf("failed to decode payload: %w", err)
+		return nil, fmt.Errorf("failed to decode payload: %w", err)
 	}
 
-	u.PrintTable([]string{"Header", "Value"}, dictToRows(header))
-	u.PrintTable([]string{"Payload", "Value"}, dictToRows(payload))
-	return nil
+	return &ConvertResult{
+		Tables: []TableData{
+			{Headers: []string{"Header", "Value"}, Rows: dictToRows(header)},
+			{Headers: []string{"Payload", "Value"}, Rows: dictToRows(payload)},
+		},
+	}, nil
 }
 
 func dictToRows(dict map[string]any) [][]string {
@@ -83,3 +82,4 @@ func jwtDecodeSegment(seg string) (map[string]any, error) {
 	}
 	return result, nil
 }
+

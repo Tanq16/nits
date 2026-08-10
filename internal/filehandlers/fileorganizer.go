@@ -1,26 +1,26 @@
 package filehandlers
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/tanq16/nits/utils"
 )
 
-// RunFileOrganizer groups files in the current directory into subdirectories
-// by shared base name. It returns the number of files moved and the number
-// of folders created (or that would be created, in dry-run mode).
-func RunFileOrganizer(dryRun bool) (movedCount int, folderCount int, err error) {
+type OrganizerResult struct {
+	Groups      map[string][]string
+	MovedCount  int
+	FolderCount int
+}
+
+func RunFileOrganizer(dryRun bool) (*OrganizerResult, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, err
 	}
 	entries, err := os.ReadDir(currentDir)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to read directory: %w", err)
+		return nil, err
 	}
 	groups := make(map[string][]string)
 	for _, entry := range entries {
@@ -40,25 +40,34 @@ func RunFileOrganizer(dryRun bool) (movedCount int, folderCount int, err error) 
 		}
 	}
 	if dryRun {
-		dryRunMode(filteredGroups)
-		return 0, len(filteredGroups), nil
+		return &OrganizerResult{
+			Groups:      filteredGroups,
+			FolderCount: len(filteredGroups),
+		}, nil
 	}
+
+	movedCount := 0
+	folderCount := 0
 	for base, files := range filteredGroups {
 		basePath := filepath.Join(currentDir, base)
 		if err := os.MkdirAll(basePath, 0755); err != nil {
-			return movedCount, folderCount, fmt.Errorf("failed to create directory %s: %w", basePath, err)
+			return nil, err
 		}
 		for _, filename := range files {
 			srcPath := filepath.Join(currentDir, filename)
 			dstPath := filepath.Join(basePath, filename)
 			if err := os.Rename(srcPath, dstPath); err != nil {
-				return movedCount, folderCount, fmt.Errorf("failed to move %s: %w", filename, err)
+				return nil, err
 			}
 			movedCount++
 		}
 		folderCount++
 	}
-	return movedCount, folderCount, nil
+	return &OrganizerResult{
+		Groups:      filteredGroups,
+		MovedCount:  movedCount,
+		FolderCount: folderCount,
+	}, nil
 }
 
 func extractBaseName(filename string) string {
@@ -69,18 +78,4 @@ func extractBaseName(filename string) string {
 		return parts[0]
 	}
 	return name
-}
-
-func dryRunMode(groups map[string][]string) {
-	utils.PrintInfo(fmt.Sprintf("Found %d groups to create", len(groups)))
-	for base, files := range groups {
-		utils.PrintGeneric(fmt.Sprintf("  %s/ (%d files)", base, len(files)))
-		displayCount := min(len(files), 5)
-		for i := range displayCount {
-			utils.PrintGeneric(fmt.Sprintf("    - %s", files[i]))
-		}
-		if len(files) > displayCount {
-			utils.PrintGeneric(fmt.Sprintf("    ... and %d more", len(files)-displayCount))
-		}
-	}
 }

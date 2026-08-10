@@ -79,11 +79,32 @@ var fsSyncClientCmd = &cobra.Command{
 		if err != nil {
 			u.PrintFatal("Failed to initialize client", err)
 		}
-		if err := c.Run(); err != nil {
+		cb := fssync.ClientCallbacks{
+			OnInfo: func(msg string) {
+				u.PrintInfo(msg)
+			},
+			OnGeneric: func(msg string) {
+				u.PrintGeneric(msg)
+			},
+			OnItemSuccess: func(msg string) {
+				u.PrintIndentedSuccess(msg)
+			},
+			OnWarn: func(msg string, err error) {
+				u.PrintWarn(msg, err)
+			},
+			OnSuccess: func(msg string) {
+				u.PrintSuccess(msg)
+			},
+			OnError: func(msg string, err error) {
+				u.PrintError(msg, err)
+			},
+		}
+		if err := c.Run(cb); err != nil {
 			u.PrintFatal("Sync failed", err)
 		}
 	},
 }
+
 
 func init() {
 	fsSyncServeCmd.Flags().StringVarP(&fsSyncServeFlags.mode, "mode", "m", "send", "Sync mode: 'send' (serve files) or 'receive' (accept files)")
@@ -97,8 +118,9 @@ func init() {
 	fsSyncClientCmd.Flags().StringVarP(&fsSyncClientFlags.dir, "dir", "d", ".", "Local directory to sync")
 	fsSyncClientCmd.Flags().StringVar(&fsSyncClientFlags.ignore, "ignore", "", "Comma-separated patterns to ignore (e.g., '.git,node_modules')")
 	fsSyncClientCmd.Flags().BoolVarP(&fsSyncClientFlags.insecure, "insecure", "k", false, "Skip TLS certificate verification")
-	fsSyncClientCmd.Flags().BoolVar(&fsSyncClientFlags.delete, "delete", false, "Delete local files not present on server (when pulling)")
-	fsSyncClientCmd.Flags().BoolVarP(&fsSyncClientFlags.dryRun, "dry-run", "r", false, "Show what would be synced without doing it (when pulling)")
+	fsSyncClientCmd.Flags().BoolVar(&fsSyncClientFlags.delete, "delete", false, "Delete extra files not present on sender")
+	fsSyncClientCmd.Flags().BoolVarP(&fsSyncClientFlags.dryRun, "dry-run", "r", false, "Show what would be synced without doing it")
+
 
 	FSSyncCmd.AddCommand(fsSyncServeCmd)
 	FSSyncCmd.AddCommand(fsSyncClientCmd)

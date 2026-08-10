@@ -56,7 +56,7 @@ func TestConvertData(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ConvertData(tt.converterType, tt.input)
+			_, err := ConvertData(tt.converterType, tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ConvertData(%q, %q) err = %v, wantErr %v", tt.converterType, tt.input, err, tt.wantErr)
 			}
@@ -98,7 +98,7 @@ func TestJwtDecode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := jwtDecode(tt.token); (err != nil) != tt.wantErr {
+			if _, err := jwtDecode(tt.token); (err != nil) != tt.wantErr {
 				t.Errorf("jwtDecode(%q) err = %v, wantErr %v", tt.token, err, tt.wantErr)
 			}
 		})
@@ -157,11 +157,11 @@ func TestConvertDockerToCompose(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	if err := convertDockerToCompose("not a docker command"); err == nil {
+	if _, err := convertDockerToCompose("not a docker command"); err == nil {
 		t.Error("expected error for non 'docker run' prefixed input")
 	}
 
-	if err := convertDockerToCompose(`docker run -d --name web -p 8080:80 -e FOO=bar nginx`); err != nil {
+	if _, err := convertDockerToCompose(`docker run -d --name web -p 8080:80 -e FOO=bar nginx`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data, err := os.ReadFile("docker-compose.yml")
@@ -192,7 +192,7 @@ func TestConvertDockerToComposeBooleanFlags(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	if err := convertDockerToCompose(`docker run -it --rm nginx bash`); err != nil {
+	if _, err := convertDockerToCompose(`docker run -it --rm nginx bash`); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	data, err := os.ReadFile("docker-compose.yml")
@@ -211,6 +211,7 @@ func TestConvertDockerToComposeBooleanFlags(t *testing.T) {
 		t.Errorf("command = %v, want bash", app["command"])
 	}
 }
+
 
 func TestResolveUnderRoot(t *testing.T) {
 	root := t.TempDir()

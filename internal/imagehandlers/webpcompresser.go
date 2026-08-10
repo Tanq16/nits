@@ -1,6 +1,7 @@
 package imagehandlers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -10,17 +11,26 @@ import (
 	"slices"
 	"strings"
 	"sync"
-
-	"github.com/rs/zerolog/log"
-	"github.com/tanq16/nits/utils"
 )
 
-func RunImgWebp(ctx context.Context, dryRun bool, workers int) error {
+type WebPStats struct {
+	Processed       int64
+	Quality98       int64
+	Quality95       int64
+	Resized         int64
+	FinalUnder190   int64
+	FinalOver190    int64
+	TotalSavedBytes int64
+	DetailedLogs    []string
+	OriginalFiles   []string
+}
+
+func RunImgWebp(ctx context.Context, dryRun bool, workers int) (*WebPStats, error) {
 	path := "."
 	extensions := []string{".jpg", ".jpeg", ".png", ".tiff"}
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		return fmt.Errorf("failed to read directory: %w", err)
+		return nil, err
 	}
 	var paths []string
 	for _, entry := range entries {
@@ -34,24 +44,11 @@ func RunImgWebp(ctx context.Context, dryRun bool, workers int) error {
 		paths = append(paths, filepath.Join(path, entry.Name()))
 	}
 	if len(paths) == 0 {
-		utils.PrintInfo("No images found")
-		return nil
+		return &WebPStats{}, nil
 	}
 
-	stats := map[string]int64{
-		"processed":         0,
-		"quality_98":        0,
-		"quality_95":        0,
-		"resized":           0,
-		"final_under_190":   0,
-		"final_over_190":    0,
-		"total_saved_bytes": 0,
-	}
+	stats := &WebPStats{}
 	var statsMutex sync.Mutex
-	var detailedLogs []string
-	var logsMutex sync.Mutex
-	var originalFiles []string
-	var filesMutex sync.Mutex
 	magickCmd := getImageMagickCommand()
 
 	pathChan := make(chan string, len(paths))
@@ -72,32 +69,47 @@ func RunImgWebp(ctx context.Context, dryRun bool, workers int) error {
 				inputExt := strings.TrimPrefix(ext, ".")
 				webpPath := filepath.Join(path, fmt.Sprintf("%s.webp", uuidName))
 				tempWebp := filepath.Join(path, fmt.Sprintf("%s_temp.webp", uuidName))
-				statsMutex.Lock()
-				stats["processed"]++
-				statsMutex.Unlock()
-				filesMutex.Lock()
-				originalFiles = append(originalFiles, filename)
-				filesMutex.Unlock()
 
-				exec.CommandContext(ctx, magickCmd, inputPath, "-quality", "98", webpPath).Run()
+				if err := runCmd(ctx, magickCmd, inputPath, "-quality", "98", webpPath); err != nil {
+					continue
+				}
+
 				webpSize := getFileSize(webpPath)
+				if webpSize == 0 {
+					os.Remove(webpPath)
+					continue
+				}
+
 				if webpSize >= origSize {
-					exec.CommandContext(ctx, magickCmd, inputPath, "-quality", "95", webpPath).Run()
-					statsMutex.Lock()
-					stats["quality_95"]++
-					statsMutex.Unlock()
+					if err := runCmd(ctx, magickCmd, inputPath, "-quality", "95", webpPath); err != nil {
+						os.Remove(webpPath)
+						continue
+					}
 					webpSize = getFileSize(webpPath)
+					if webpSize == 0 {
+						os.Remove(webpPath)
+						continue
+					}
+					statsMutex.Lock()
+					stats.Quality95++
+					statsMutex.Unlock()
 				} else {
 					statsMutex.Lock()
-					stats["quality_98"]++
+					stats.Quality98++
 					statsMutex.Unlock()
 				}
 
 				if webpSize > 190*1024 {
 					resizedThisFile := false
 					for scale := 90; scale >= 60; scale -= 10 {
-						exec.CommandContext(ctx, magickCmd, webpPath, "-resize", fmt.Sprintf("%d%%", scale), tempWebp).Run()
+						if err := runCmd(ctx, magickCmd, webpPath, "-resize", fmt.Sprintf("%d%%", scale), tempWebp); err != nil {
+							break
+						}
 						newSize := getFileSize(tempWebp)
+						if newSize == 0 {
+							os.Remove(tempWebp)
+							break
+						}
 						resizedThisFile = true
 						if newSize <= 190*1024 || scale == 60 {
 							os.Rename(tempWebp, webpPath)
@@ -107,34 +119,31 @@ func RunImgWebp(ctx context.Context, dryRun bool, workers int) error {
 					}
 					if resizedThisFile {
 						statsMutex.Lock()
-						stats["resized"]++
+						stats.Resized++
 						statsMutex.Unlock()
 					}
 					if _, err := os.Stat(tempWebp); err == nil {
 						os.Remove(tempWebp)
 					}
 				}
-				if webpSize <= 190*1024 {
-					statsMutex.Lock()
-					stats["final_under_190"]++
-					statsMutex.Unlock()
-				} else {
-					statsMutex.Lock()
-					stats["final_over_190"]++
-					statsMutex.Unlock()
-				}
+
 				statsMutex.Lock()
-				stats["total_saved_bytes"] += (origSize - webpSize)
-				statsMutex.Unlock()
+				stats.Processed++
+				stats.OriginalFiles = append(stats.OriginalFiles, filename)
+				if webpSize <= 190*1024 {
+					stats.FinalUnder190++
+				} else {
+					stats.FinalOver190++
+				}
+				stats.TotalSavedBytes += (origSize - webpSize)
 
 				if dryRun {
 					logEntry := fmt.Sprintf("%s: %s -> webp | %.1fKB -> %.1fKB", filename, inputExt, float64(origSize)/1024, float64(webpSize)/1024)
-					logsMutex.Lock()
-					detailedLogs = append(detailedLogs, logEntry)
-					logsMutex.Unlock()
+					stats.DetailedLogs = append(stats.DetailedLogs, logEntry)
 				} else {
 					os.Remove(inputPath)
 				}
+				statsMutex.Unlock()
 			}
 		})
 	}
@@ -144,31 +153,30 @@ func RunImgWebp(ctx context.Context, dryRun bool, workers int) error {
 	close(pathChan)
 	wg.Wait()
 
+
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 
 	if dryRun {
-		if err := os.WriteFile("to-delete.txt", []byte(strings.Join(originalFiles, "\n")), 0644); err != nil {
-			return fmt.Errorf("failed to write to-delete.txt: %w", err)
+		if err := os.WriteFile("to-delete.txt", []byte(strings.Join(stats.OriginalFiles, "\n")), 0644); err != nil {
+			return nil, err
 		}
 	}
 
-	utils.PrintInfo("Conversion statistics")
-	utils.PrintGeneric(fmt.Sprintf("Total images processed:      %d", stats["processed"]))
-	utils.PrintGeneric(fmt.Sprintf("Retained with Quality 98:    %d", stats["quality_98"]))
-	utils.PrintGeneric(fmt.Sprintf("Fallback to Quality 95:      %d", stats["quality_95"]))
-	utils.PrintGeneric(fmt.Sprintf("Images requiring Resizing:   %d", stats["resized"]))
-	utils.PrintGeneric(fmt.Sprintf("Final WebP <= 190 KB:        %d", stats["final_under_190"]))
-	utils.PrintGeneric(fmt.Sprintf("Final WebP > 190 KB:         %d", stats["final_over_190"]))
-	utils.PrintGeneric(fmt.Sprintf("Total storage space saved:   %.2f MB", float64(stats["total_saved_bytes"])/1024/1024))
+	return stats, nil
+}
 
-	if dryRun {
-		utils.PrintInfo("Dry run logs")
-		for _, entry := range detailedLogs {
-			utils.PrintGeneric(entry)
+func runCmd(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return fmt.Errorf("%s: %w", detail, err)
 		}
-		log.Debug().Str("filename", "to-delete.txt").Msg("Original filenames saved")
+		return err
 	}
 	return nil
 }

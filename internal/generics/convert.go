@@ -5,54 +5,61 @@ import (
 	"os"
 )
 
+type TableData struct {
+	Headers []string
+	Rows    [][]string
+}
+
+type ConvertResult struct {
+	Output     string
+	OutputFile string
+	Commands   []string
+	Tables     []TableData
+}
+
 type converterInfo struct {
-	InputType  string
-	OutputType string
-	Handler    func(input string) error
+	InputType string
+	Handler   func(input string) (*ConvertResult, error)
 }
 
 var supportedConverters = map[string]converterInfo{
 	"docker-compose": {
-		InputType:  "string",
-		OutputType: "file",
-		Handler:    convertDockerToCompose,
+		InputType: "string",
+		Handler:   convertDockerToCompose,
 	},
 	"compose-docker": {
-		InputType:  "file",
-		OutputType: "string",
-		Handler:    convertComposeToDocker,
+		InputType: "file",
+		Handler:   convertComposeToDocker,
 	},
 	"urld": {
-		InputType:  "string",
-		OutputType: "string",
-		Handler:    urlToText,
+		InputType: "string",
+		Handler:   urlToText,
 	},
 	"url": {
-		InputType:  "string",
-		OutputType: "string",
-		Handler:    textToUrl,
+		InputType: "string",
+		Handler:   textToUrl,
 	},
 	"jwtd": {
-		InputType:  "string",
-		OutputType: "string",
-		Handler:    jwtDecode,
+		InputType: "string",
+		Handler:   jwtDecode,
 	},
 }
 
-func ConvertData(converterType string, input string) error {
+func ConvertData(converterType string, input string) (*ConvertResult, error) {
 	converter, exists := supportedConverters[converterType]
 	if !exists {
-		return fmt.Errorf("unsupported converter type: %s", converterType)
+		return nil, fmt.Errorf("unsupported converter type: %s", converterType)
 	}
 	switch converter.InputType {
 	case "file":
 		if _, err := os.Stat(input); os.IsNotExist(err) {
-			return fmt.Errorf("input file does not exist: %s", input)
+			return nil, fmt.Errorf("input file does not exist: %s", input)
 		}
 	case "string":
 		if input == "" {
-			return fmt.Errorf("input string cannot be empty")
+			return nil, fmt.Errorf("input string cannot be empty")
 		}
 	}
 	return converter.Handler(input)
 }
+
