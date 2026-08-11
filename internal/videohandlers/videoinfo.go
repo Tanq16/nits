@@ -24,12 +24,29 @@ type Stream struct {
 	BitRate       string      `json:"bit_rate,omitempty"`
 	AvgFrameRate  string      `json:"avg_frame_rate,omitempty"`
 	RFrameRate    string      `json:"r_frame_rate,omitempty"`
-	PixFmt        string      `json:"pix_fmt,omitempty"`
-	Channels      int         `json:"channels,omitempty"`
-	ChannelLayout string      `json:"channel_layout,omitempty"`
-	SampleRate    string      `json:"sample_rate,omitempty"`
-	Tags          Tags        `json:"tags,omitempty"`
-	Disposition   Disposition `json:"disposition"`
+	PixFmt           string      `json:"pix_fmt,omitempty"`
+	ColorSpace       string      `json:"color_space,omitempty"`
+	ColorTransfer    string      `json:"color_transfer,omitempty"`
+	ColorPrimaries   string      `json:"color_primaries,omitempty"`
+	BitsPerRawSample string      `json:"bits_per_raw_sample,omitempty"`
+	Channels         int         `json:"channels,omitempty"`
+	ChannelLayout    string      `json:"channel_layout,omitempty"`
+	SampleRate       string      `json:"sample_rate,omitempty"`
+	Tags             Tags        `json:"tags,omitempty"`
+	Disposition      Disposition `json:"disposition"`
+}
+
+func IsHDRStream(s Stream) bool {
+	transfer := strings.ToLower(s.ColorTransfer)
+	if transfer == "smpte2084" || transfer == "arib-std-b67" || transfer == "arib_std_b67" || transfer == "smpte428" {
+		return true
+	}
+	primaries := strings.ToLower(s.ColorPrimaries)
+	space := strings.ToLower(s.ColorSpace)
+	if (strings.Contains(primaries, "bt2020") || strings.Contains(space, "bt2020")) && (transfer != "bt709" && transfer != "iec61966-2-1" && transfer != "") {
+		return true
+	}
+	return false
 }
 
 type Disposition struct {

@@ -52,6 +52,24 @@ func (cb EncodeCallbacks) success(msg string) {
 	}
 }
 
+type OptimizeOptions struct {
+	CRF       int
+	MaxRes    string // "1080p", "720p", "480p", "none"
+	AudioMode string // "128k", "160k", "96k", "none"
+	Preset    string // "medium", "slow", "fast"
+	ToneMap   string // "auto", "yes", "no"
+}
+
+func DefaultOptimizeOptions() OptimizeOptions {
+	return OptimizeOptions{
+		CRF:       30,
+		MaxRes:    "1080p",
+		AudioMode: "128k",
+		Preset:    "medium",
+		ToneMap:   "auto",
+	}
+}
+
 type OptimizeResult struct {
 	InputFile   string
 	OutputFile  string
@@ -60,7 +78,11 @@ type OptimizeResult struct {
 	DurationSec float64
 	OrigWidth   int
 	OrigHeight  int
+	TargetRes   string
 	Scaled      bool
+	ToneMapped  bool
+	CRF         int
+	Preset      string
 	TimeTaken   time.Duration
 }
 
@@ -71,7 +93,7 @@ type indexedStream struct {
 
 var commentaryRegex = regexp.MustCompile(`(?i)commentary|director|cast`)
 
-func RunVideoOptimize(ctx context.Context, inputFile string, cb EncodeCallbacks) (*OptimizeResult, error) {
+func RunVideoOptimize(ctx context.Context, inputFile string, opts OptimizeOptions, cb EncodeCallbacks) (*OptimizeResult, error) {
 	inputStat, err := os.Stat(inputFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read input file: %w", err)
@@ -82,7 +104,7 @@ func RunVideoOptimize(ctx context.Context, inputFile string, cb EncodeCallbacks)
 		return nil, err
 	}
 
-	args, outputFile, origWidth, origHeight, scaled, err := buildFFmpegArgs(inputFile, data, cb)
+	args, outputFile, res, err := buildFFmpegArgs(inputFile, data, opts, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -105,25 +127,36 @@ func RunVideoOptimize(ctx context.Context, inputFile string, cb EncodeCallbacks)
 		durationSec, _ = strconv.ParseFloat(data.Format.Duration, 64)
 	}
 
-	return &OptimizeResult{
-		InputFile:   inputFile,
-		OutputFile:  outputFile,
-		InputBytes:  inputStat.Size(),
-		OutputBytes: outputBytes,
-		DurationSec: durationSec,
-		OrigWidth:   origWidth,
-		OrigHeight:  origHeight,
-		Scaled:      scaled,
-		TimeTaken:   time.Since(startTime),
-	}, nil
+	res.InputBytes = inputStat.Size()
+	res.OutputBytes = outputBytes
+	res.DurationSec = durationSec
+	res.TimeTaken = time.Since(startTime)
+
+	return res, nil
 }
 
-func buildFFmpegArgs(inputFile string, data *FFProbeOutput, cb EncodeCallbacks) ([]string, string, int, int, bool, error) {
+func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts OptimizeOptions, cb EncodeCallbacks) ([]string, string, *OptimizeResult, error) {
+	if opts.CRF <= 0 {
+		opts.CRF = 30
+	}
+	if opts.MaxRes == "" {
+		opts.MaxRes = "1080p"
+	}
+	if opts.AudioMode == "" {
+		opts.AudioMode = "128k"
+	}
+	if opts.Preset == "" {
+		opts.Preset = "medium"
+	}
+	if opts.ToneMap == "" {
+		opts.ToneMap = "auto"
+	}
+
 	args := []string{"-i", inputFile}
 
 	videoStreams := filterStreams(data.Streams, "video")
 	if len(videoStreams) == 0 {
-		return nil, "", 0, 0, false, fmt.Errorf("no video streams found in input")
+		return nil, "", nil, fmt.Errorf("no video streams found in input")
 	}
 
 	primaryVideo := videoStreams[0].stream
@@ -132,35 +165,55 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, cb EncodeCallbacks) 
 
 	args = append(args, "-map", "0:v:0")
 
-	var videoFlags []string
+	var filterChain []string
 	scaled := false
+	maxW, maxH := 0, 0
 
-	if origWidth > 1920 || origHeight > 1080 {
-		videoFlags = append(videoFlags, "-vf", "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2")
+	switch opts.MaxRes {
+	case "720p":
+		maxW, maxH = 1280, 720
+	case "480p":
+		maxW, maxH = 854, 480
+	case "none":
+		maxW, maxH = 0, 0
+	default: // "1080p"
+		maxW, maxH = 1920, 1080
+	}
+
+	if maxW > 0 && (origWidth > maxW || origHeight > maxH) {
+		filterChain = append(filterChain, fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2", maxW, maxH))
 		scaled = true
-		cb.info(fmt.Sprintf("Resolution: %dx%d downscaled to fit 1080p max", origWidth, origHeight))
+		cb.info(fmt.Sprintf("Resolution: %dx%d downscaled to fit %s max", origWidth, origHeight, opts.MaxRes))
 	} else {
 		cb.info(fmt.Sprintf("Resolution: %dx%d (retained)", origWidth, origHeight))
 	}
 
-	videoFlags = append(videoFlags, "-c:v", "libx265", "-crf", "28", "-preset", "medium", "-fps_mode", "cfr")
-
-	if primaryVideo.PixFmt == "yuv420p10le" {
-		videoFlags = append(videoFlags, "-pix_fmt", "yuv420p10le")
-		cb.info("Pixel format: 10-bit source detected (yuv420p10le)")
-	} else {
-		videoFlags = append(videoFlags, "-pix_fmt", "yuv420p")
+	isHDR := IsHDRStream(primaryVideo)
+	toneMapped := false
+	if opts.ToneMap == "yes" || (opts.ToneMap == "auto" && isHDR) {
+		filterChain = append(filterChain, "format=gbrpf32le", "tonemap=hable:desat=0.5", "format=yuv420p")
+		toneMapped = true
+		cb.info("HDR detected: applying Hable tone-mapping to standard 8-bit SDR")
 	}
 
-	cb.info("Video: libx265 CRF 28 (preset medium, CFR)")
+	var videoFlags []string
+	if len(filterChain) > 0 {
+		videoFlags = append(videoFlags, "-vf", strings.Join(filterChain, ","))
+	}
+
+	videoFlags = append(videoFlags, "-c:v", "libx265", "-crf", strconv.Itoa(opts.CRF), "-preset", opts.Preset, "-pix_fmt", "yuv420p", "-fps_mode", "cfr")
+	cb.info(fmt.Sprintf("Video: libx265 CRF %d (preset %s, 8-bit yuv420p, CFR)", opts.CRF, opts.Preset))
 
 	var audioFlags []string
 	audioStreams := filterStreams(data.Streams, "audio")
 
-	if len(audioStreams) > 0 {
+	if opts.AudioMode == "none" || len(audioStreams) == 0 {
+		audioFlags = append(audioFlags, "-an")
+		cb.info("Audio: none")
+	} else {
 		selectedIdx := selectAudioStream(audioStreams)
 		args = append(args, "-map", fmt.Sprintf("0:a:%d", selectedIdx))
-		audioFlags = append(audioFlags, "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000")
+		audioFlags = append(audioFlags, "-c:a", "aac", "-b:a", opts.AudioMode, "-ac", "2", "-ar", "48000")
 
 		selected := audioStreams[selectedIdx]
 		lang := selected.stream.Tags.Language
@@ -168,12 +221,10 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, cb EncodeCallbacks) 
 			lang = "und"
 		}
 		if selected.stream.Tags.Title != "" {
-			cb.info(fmt.Sprintf("Audio: stream #%d (%s — %s) → AAC stereo 128k 48kHz", selected.stream.Index, lang, selected.stream.Tags.Title))
+			cb.info(fmt.Sprintf("Audio: stream #%d (%s — %s) → AAC stereo %s 48kHz", selected.stream.Index, lang, selected.stream.Tags.Title, opts.AudioMode))
 		} else {
-			cb.info(fmt.Sprintf("Audio: stream #%d (%s) → AAC stereo 128k 48kHz", selected.stream.Index, lang))
+			cb.info(fmt.Sprintf("Audio: stream #%d (%s) → AAC stereo %s 48kHz", selected.stream.Index, lang, opts.AudioMode))
 		}
-	} else {
-		cb.info("Audio: none")
 	}
 
 	var subtitleFlags []string
@@ -201,7 +252,22 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, cb EncodeCallbacks) 
 	args = append(args, subtitleFlags...)
 	args = append(args, "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", outputFile)
 
-	return args, outputFile, origWidth, origHeight, scaled, nil
+	targetRes := opts.MaxRes
+	if !scaled {
+		targetRes = fmt.Sprintf("%dx%d", origWidth, origHeight)
+	}
+
+	return args, outputFile, &OptimizeResult{
+		InputFile:  inputFile,
+		OutputFile: outputFile,
+		OrigWidth:  origWidth,
+		OrigHeight: origHeight,
+		TargetRes:  targetRes,
+		Scaled:     scaled,
+		ToneMapped: toneMapped,
+		CRF:        opts.CRF,
+		Preset:     opts.Preset,
+	}, nil
 }
 
 func filterStreams(streams []Stream, codecType string) []indexedStream {
