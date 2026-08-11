@@ -118,7 +118,6 @@ func TestBuildFFmpegArgs_ResolutionScaling(t *testing.T) {
 				t.Errorf("has -vf flag = %v, want %v", hasVf, tt.wantFilter)
 			}
 
-			// Verify 8-bit yuv420p is always enforced
 			pixIdx := slices.Index(args, "-pix_fmt")
 			if pixIdx == -1 || pixIdx+1 >= len(args) {
 				t.Fatalf("missing -pix_fmt in args")
@@ -127,7 +126,6 @@ func TestBuildFFmpegArgs_ResolutionScaling(t *testing.T) {
 				t.Errorf("got pix_fmt %s, want yuv420p", args[pixIdx+1])
 			}
 
-			// Verify CRF 30 by default
 			crfIdx := slices.Index(args, "-crf")
 			if crfIdx == -1 || crfIdx+1 >= len(args) {
 				t.Fatalf("missing -crf in args")
@@ -140,6 +138,53 @@ func TestBuildFFmpegArgs_ResolutionScaling(t *testing.T) {
 				t.Errorf("unexpected output file: %s", outputFile)
 			}
 		})
+	}
+}
+
+func TestBuildFFmpegArgs_AV1Codec(t *testing.T) {
+	probe := &FFProbeOutput{
+		Streams: []Stream{
+			{Index: 0, CodecType: "video", CodecName: "h264", Width: 1920, Height: 1080, PixFmt: "yuv420p"},
+			{Index: 1, CodecType: "audio", CodecName: "aac", Channels: 2},
+		},
+		Format: Format{Filename: "test.mp4", Duration: "60"},
+	}
+
+	opts := OptimizeOptions{
+		Codec:     "av1",
+		CRF:       32,
+		Preset:    "6",
+		MaxRes:    "1080p",
+		AudioMode: "128k",
+		ToneMap:   "auto",
+	}
+
+	args, _, res, err := buildFFmpegArgs("/tmp/test.mp4", probe, opts, EncodeCallbacks{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.Codec != "av1" {
+		t.Errorf("got codec %s, want av1", res.Codec)
+	}
+
+	codecIdx := slices.Index(args, "-c:v")
+	if codecIdx == -1 || codecIdx+1 >= len(args) || args[codecIdx+1] != "libsvtav1" {
+		t.Errorf("expected -c:v libsvtav1, args: %v", args)
+	}
+
+	crfIdx := slices.Index(args, "-crf")
+	if args[crfIdx+1] != "32" {
+		t.Errorf("expected -crf 32, got %s", args[crfIdx+1])
+	}
+
+	presetIdx := slices.Index(args, "-preset")
+	if args[presetIdx+1] != "6" {
+		t.Errorf("expected -preset 6, got %s", args[presetIdx+1])
+	}
+
+	if !slices.Contains(args, "-svtav1-params") {
+		t.Errorf("expected -svtav1-params in args, got %v", args)
 	}
 }
 
@@ -242,6 +287,7 @@ func TestBuildFFmpegArgs_ManualOptions(t *testing.T) {
 	}
 
 	opts := OptimizeOptions{
+		Codec:     "hevc",
 		CRF:       24,
 		MaxRes:    "720p",
 		AudioMode: "none",
@@ -343,6 +389,7 @@ func TestIsErrorLine(t *testing.T) {
 	}{
 		{"[info] Video stream detected", false},
 		{"[warning] non-standard frame rate", false},
+		{"Svt[info]: SVT [version]: SVT-AV1 Encoder", false},
 		{"[error] Failed to open codec", true},
 		{"Conversion failed", true},
 		{"Cannot allocate memory", true},

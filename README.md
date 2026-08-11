@@ -19,7 +19,7 @@ A more robust tool is [anbu](https://github.com/tanq16/anbu). As and when I find
 |----------|----------|-------------|
 | Files | `file-organizer`, `file-unzipper`, `file-json-uniq`, `manual-rename`/`mrename` | File management, organization, and interactive rename |
 | Images | `img-webp`, `img-dedup` | Image compression and duplicate detection |
-| Video | `video-optimize` / `video-opt` | Video size optimization (H.265 CPU, max 1080p, CRF 30, 8-bit SDR, HDR tone-mapping, interactive `--manual`) |
+| Video | `video-optimize` / `video-opt` | Video size optimization (H.265/AV1 CPU, max 1080p, 8-bit SDR, HDR tone-mapping, interactive `--manual`) |
 | Data | `convert`, `neo4j` | Format conversion and Neo4j Cypher queries |
 | Productivity | `tasks` | Lightweight local task tracker with pending/done status |
 | Diagrams | `mermaid-svg`, `markdown`/`md` | Mermaid SVG conversion and markdown viewer |
@@ -167,23 +167,27 @@ nits img-dedup --hamming-distance 5
 
 #### `video-optimize` / `video-opt`
 
-Optimize a video file for maximum space reduction using H.265 CPU encoding (`libx265`, CRF 30, preset medium, 8-bit `yuv420p`). Videos $> 1080\text{p}$ (e.g. 4K, 1440p) are automatically downscaled to fit within $1920\times 1080$ preserving aspect ratio; lower resolutions are kept at native size without resampling. 10-bit HDR sources are automatically tone-mapped to 8-bit standard dynamic range (SDR) to prevent washed-out colors. Audio is encoded to transparent 128 kbps AAC stereo.
+Optimize a video file for maximum space reduction using H.265 (default, `libx265`, CRF 30, preset medium) or AV1 (`libsvtav1`, CRF 32, preset 6) CPU encoding in 8-bit `yuv420p`. Videos $> 1080\text{p}$ (e.g. 4K, 1440p) are automatically downscaled to fit within $1920\times 1080$ preserving aspect ratio; lower resolutions are kept at native size without resampling. 10-bit HDR sources are automatically tone-mapped to 8-bit standard dynamic range (SDR) to prevent washed-out colors. Audio is encoded to transparent 128 kbps AAC stereo.
 
 ```bash
-nits video-optimize <file> [--manual]
+nits video-optimize <file> [--codec hevc|av1] [--manual]
 ```
 
 **Flags:**
-- `--manual, -m` - Interactively configure CRF (22–34), target resolution, audio bitrate, and encoder speed preset via selection prompts
+- `--codec, -c` - Video codec: `hevc` (default) or `av1` (libsvtav1)
+- `--manual, -m` - Interactively configure codec, CRF, target resolution, audio bitrate, and encoder speed preset via selection prompts
 
 **Examples:**
 
 ```bash
-# Optimize with default settings (CRF 30, max 1080p, 8-bit SDR)
+# Optimize with default HEVC settings (CRF 30, max 1080p, 8-bit SDR)
 nits video-optimize movie.mkv
 nits video-opt clip.mp4
 
-# Interactively choose quality, resolution, audio, and preset
+# Optimize using AV1
+nits video-optimize video.webm --codec av1
+
+# Interactively choose codec, quality, resolution, audio, and preset
 nits video-optimize movie.mkv --manual
 ```
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -16,19 +17,21 @@ import (
 )
 
 var videoOptimizeFlags struct {
+	codec  string
 	manual bool
 }
 
 var videoOptimizeCmd = &cobra.Command{
 	Use:     "video-optimize <file>",
 	Aliases: []string{"video-opt"},
-	Short:   "Optimize video file to H.265 (max 1080p, CRF 30, 8-bit SDR, AAC 128k)",
-	Long: `Optimizes a video file for size reduction using CPU H.265 encoding.
+	Short:   "Optimize video file (H.265 or AV1, max 1080p, 8-bit SDR, AAC 128k)",
+	Long: `Optimizes a video file for size reduction using CPU H.265 (default) or AV1 encoding.
 Videos with resolutions higher than 1080p are downscaled to fit within 1080p,
 while lower resolutions are preserved. 10-bit HDR videos are automatically tone-mapped
 to 8-bit SDR. Encodes audio to 128 kbps AAC stereo.
 
-Use --manual to interactively configure CRF, resolution, audio, and presets.
+Use --codec av1 to encode using libsvtav1.
+Use --manual to interactively configure codec, CRF, resolution, audio, and presets.
 
 Output file is saved as <basename>.optimized.mp4.`,
 	Args: cobra.ExactArgs(1),
@@ -40,6 +43,16 @@ Output file is saved as <basename>.optimized.mp4.`,
 		inputBase := filepath.Base(inputFile)
 
 		opts := videohandlers.DefaultOptimizeOptions()
+		if videoOptimizeFlags.codec != "" {
+			c := strings.ToLower(videoOptimizeFlags.codec)
+			if c == "av1" {
+				opts.Codec = "av1"
+				opts.CRF = 32
+				opts.Preset = "6"
+			} else {
+				opts.Codec = "hevc"
+			}
+		}
 
 		if videoOptimizeFlags.manual {
 			data, err := videohandlers.GetVideoInfo(inputFile)
@@ -47,17 +60,46 @@ Output file is saved as <basename>.optimized.mp4.`,
 				utils.PrintFatal("Failed to probe video", err)
 			}
 
-			// CRF prompt
-			crfOptions := []string{
-				"30 (Default — High Compression, ~65-75% size reduction)",
-				"28 (Balanced Quality — Crisp 1080p details, ~50-65% size reduction)",
-				"26 (Medium-High Quality — Recommended for action/sports)",
-				"24 (High Quality — Near-source transparent)",
-				"22 (Very High Quality — Archival quality)",
-				"32 (Very High Compression — Smallest size, tutorials/talks)",
-				"34 (Maximum Compression — Extreme compression)",
+			codecOptions := []string{
+				"H.265 / HEVC (Default — Universal hardware & device compatibility)",
+				"AV1 (Maximum compression via SVT-AV1, newer devices/browsers)",
 			}
-			crfValues := []int{30, 28, 26, 24, 22, 32, 34}
+			codecIdx, err := utils.PromptSelect("Select video codec", codecOptions)
+			if err != nil || codecIdx < 0 {
+				utils.PrintInfo("Optimization cancelled")
+				return
+			}
+			if codecIdx == 1 {
+				opts.Codec = "av1"
+			} else {
+				opts.Codec = "hevc"
+			}
+
+			var crfOptions []string
+			var crfValues []int
+			if opts.Codec == "av1" {
+				crfOptions = []string{
+					"32 (Default — High Compression, ~65-75% size reduction)",
+					"30 (Balanced Quality — Crisp 1080p details, ~55-65% size reduction)",
+					"28 (High Quality — Great for fast motion)",
+					"24 (Very High Quality — Near-source transparent)",
+					"36 (Very High Compression — Smallest size, tutorials/talks)",
+					"40 (Maximum Compression — Extreme compression)",
+				}
+				crfValues = []int{32, 30, 28, 24, 36, 40}
+			} else {
+				crfOptions = []string{
+					"30 (Default — High Compression, ~65-75% size reduction)",
+					"28 (Balanced Quality — Crisp 1080p details, ~50-65% size reduction)",
+					"26 (Medium-High Quality — Recommended for action/sports)",
+					"24 (High Quality — Near-source transparent)",
+					"22 (Very High Quality — Archival quality)",
+					"32 (Very High Compression — Smallest size, tutorials/talks)",
+					"34 (Maximum Compression — Extreme compression)",
+				}
+				crfValues = []int{30, 28, 26, 24, 22, 32, 34}
+			}
+
 			crfIdx, err := utils.PromptSelect("Select CRF quality/compression factor", crfOptions)
 			if err != nil || crfIdx < 0 {
 				utils.PrintInfo("Optimization cancelled")
@@ -65,7 +107,6 @@ Output file is saved as <basename>.optimized.mp4.`,
 			}
 			opts.CRF = crfValues[crfIdx]
 
-			// Resolution prompt
 			resOptions := []string{
 				"1080p (Default — Max 1920x1080, keep if lower)",
 				"720p (Max 1280x720, keep if lower)",
@@ -80,7 +121,6 @@ Output file is saved as <basename>.optimized.mp4.`,
 			}
 			opts.MaxRes = resValues[resIdx]
 
-			// Audio prompt
 			audioOptions := []string{
 				"128 kbps (Default — AAC Stereo)",
 				"160 kbps (Higher bitrate AAC Stereo)",
@@ -95,21 +135,31 @@ Output file is saved as <basename>.optimized.mp4.`,
 			}
 			opts.AudioMode = audioValues[audioIdx]
 
-			// Preset prompt
-			presetOptions := []string{
-				"medium (Default — Balanced speed and compression)",
-				"slow (Better compression, ~2x longer encode)",
-				"fast (Faster encode, ~5-10% larger file)",
+			var presetOptions []string
+			var presetValues []string
+			if opts.Codec == "av1" {
+				presetOptions = []string{
+					"6 (Default — Balanced speed and compression)",
+					"4 (Better compression, ~2x longer encode)",
+					"8 (Faster encode, slightly larger file)",
+				}
+				presetValues = []string{"6", "4", "8"}
+			} else {
+				presetOptions = []string{
+					"medium (Default — Balanced speed and compression)",
+					"slow (Better compression, ~2x longer encode)",
+					"fast (Faster encode, ~5-10% larger file)",
+				}
+				presetValues = []string{"medium", "slow", "fast"}
 			}
-			presetValues := []string{"medium", "slow", "fast"}
-			presetIdx, err := utils.PromptSelect("Select H.265 encoder speed preset", presetOptions)
+
+			presetIdx, err := utils.PromptSelect("Select encoder speed preset", presetOptions)
 			if err != nil || presetIdx < 0 {
 				utils.PrintInfo("Optimization cancelled")
 				return
 			}
 			opts.Preset = presetValues[presetIdx]
 
-			// Tone mapping prompt if HDR is detected
 			var primaryVideo *videohandlers.Stream
 			for _, s := range data.Streams {
 				if s.CodecType == "video" {
@@ -194,10 +244,18 @@ Output file is saved as <basename>.optimized.mp4.`,
 			colorProfile = "Tone-mapped to 8-bit SDR"
 		}
 
+		codecDisplay := strings.ToUpper(res.Codec)
+		if res.Codec == "hevc" {
+			codecDisplay = "H.265 (HEVC)"
+		} else if res.Codec == "av1" {
+			codecDisplay = "AV1 (libsvtav1)"
+		}
+
 		utils.PrintTable([]string{"Property", "Value"}, [][]string{
 			{"Input Size", videohandlers.FormatSize(float64(res.InputBytes))},
 			{"Optimized Size", videohandlers.FormatSize(float64(res.OutputBytes))},
 			{"Space Saved", spaceSavedStr},
+			{"Codec", codecDisplay},
 			{"Resolution", resStr},
 			{"CRF / Preset", fmt.Sprintf("%d / %s", res.CRF, res.Preset)},
 			{"Color Format", colorProfile},
@@ -208,6 +266,7 @@ Output file is saved as <basename>.optimized.mp4.`,
 }
 
 func init() {
-	videoOptimizeCmd.Flags().BoolVarP(&videoOptimizeFlags.manual, "manual", "m", false, "Interactively choose CRF, resolution, audio, and preset options")
+	videoOptimizeCmd.Flags().StringVarP(&videoOptimizeFlags.codec, "codec", "c", "hevc", "Video codec: hevc (default) or av1")
+	videoOptimizeCmd.Flags().BoolVarP(&videoOptimizeFlags.manual, "manual", "m", false, "Interactively choose codec, CRF, resolution, audio, and preset options")
 	rootCmd.AddCommand(videoOptimizeCmd)
 }

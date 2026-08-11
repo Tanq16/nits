@@ -53,15 +53,17 @@ func (cb EncodeCallbacks) success(msg string) {
 }
 
 type OptimizeOptions struct {
+	Codec     string
 	CRF       int
-	MaxRes    string // "1080p", "720p", "480p", "none"
-	AudioMode string // "128k", "160k", "96k", "none"
-	Preset    string // "medium", "slow", "fast"
-	ToneMap   string // "auto", "yes", "no"
+	MaxRes    string
+	AudioMode string
+	Preset    string
+	ToneMap   string
 }
 
 func DefaultOptimizeOptions() OptimizeOptions {
 	return OptimizeOptions{
+		Codec:     "hevc",
 		CRF:       30,
 		MaxRes:    "1080p",
 		AudioMode: "128k",
@@ -81,6 +83,7 @@ type OptimizeResult struct {
 	TargetRes   string
 	Scaled      bool
 	ToneMapped  bool
+	Codec       string
 	CRF         int
 	Preset      string
 	TimeTaken   time.Duration
@@ -136,8 +139,18 @@ func RunVideoOptimize(ctx context.Context, inputFile string, opts OptimizeOption
 }
 
 func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts OptimizeOptions, cb EncodeCallbacks) ([]string, string, *OptimizeResult, error) {
+	codec := strings.ToLower(opts.Codec)
+	if codec != "av1" {
+		codec = "hevc"
+	}
+	opts.Codec = codec
+
 	if opts.CRF <= 0 {
-		opts.CRF = 30
+		if codec == "av1" {
+			opts.CRF = 32
+		} else {
+			opts.CRF = 30
+		}
 	}
 	if opts.MaxRes == "" {
 		opts.MaxRes = "1080p"
@@ -146,7 +159,20 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts OptimizeOptions
 		opts.AudioMode = "128k"
 	}
 	if opts.Preset == "" {
-		opts.Preset = "medium"
+		if codec == "av1" {
+			opts.Preset = "6"
+		} else {
+			opts.Preset = "medium"
+		}
+	} else if codec == "av1" {
+		switch strings.ToLower(opts.Preset) {
+		case "medium":
+			opts.Preset = "6"
+		case "slow":
+			opts.Preset = "4"
+		case "fast":
+			opts.Preset = "8"
+		}
 	}
 	if opts.ToneMap == "" {
 		opts.ToneMap = "auto"
@@ -176,7 +202,7 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts OptimizeOptions
 		maxW, maxH = 854, 480
 	case "none":
 		maxW, maxH = 0, 0
-	default: // "1080p"
+	default:
 		maxW, maxH = 1920, 1080
 	}
 
@@ -201,8 +227,13 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts OptimizeOptions
 		videoFlags = append(videoFlags, "-vf", strings.Join(filterChain, ","))
 	}
 
-	videoFlags = append(videoFlags, "-c:v", "libx265", "-crf", strconv.Itoa(opts.CRF), "-preset", opts.Preset, "-pix_fmt", "yuv420p", "-fps_mode", "cfr")
-	cb.info(fmt.Sprintf("Video: libx265 CRF %d (preset %s, 8-bit yuv420p, CFR)", opts.CRF, opts.Preset))
+	if codec == "av1" {
+		videoFlags = append(videoFlags, "-c:v", "libsvtav1", "-crf", strconv.Itoa(opts.CRF), "-preset", opts.Preset, "-svtav1-params", "tune=0", "-pix_fmt", "yuv420p", "-fps_mode", "cfr")
+		cb.info(fmt.Sprintf("Video: AV1 (libsvtav1) CRF %d (preset %s, 8-bit yuv420p, CFR)", opts.CRF, opts.Preset))
+	} else {
+		videoFlags = append(videoFlags, "-c:v", "libx265", "-crf", strconv.Itoa(opts.CRF), "-preset", opts.Preset, "-pix_fmt", "yuv420p", "-fps_mode", "cfr")
+		cb.info(fmt.Sprintf("Video: H.265 (libx265) CRF %d (preset %s, 8-bit yuv420p, CFR)", opts.CRF, opts.Preset))
+	}
 
 	var audioFlags []string
 	audioStreams := filterStreams(data.Streams, "audio")
@@ -265,6 +296,7 @@ func buildFFmpegArgs(inputFile string, data *FFProbeOutput, opts OptimizeOptions
 		TargetRes:  targetRes,
 		Scaled:     scaled,
 		ToneMapped: toneMapped,
+		Codec:      codec,
 		CRF:        opts.CRF,
 		Preset:     opts.Preset,
 	}, nil
@@ -420,7 +452,7 @@ func runEncode(ctx context.Context, outputFile string, data *FFProbeOutput, ffmp
 
 func isErrorLine(line string) bool {
 	line = strings.ToLower(line)
-	if strings.Contains(line, "[info]") || strings.Contains(line, "[warning]") {
+	if strings.Contains(line, "[info]") || strings.Contains(line, "[warning]") || strings.HasPrefix(line, "svt[info]") {
 		return false
 	}
 	if strings.Contains(line, "error") || strings.Contains(line, "failed") || strings.Contains(line, "cannot") {
