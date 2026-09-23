@@ -65,6 +65,7 @@ func init() {
 	rootCmd.AddCommand(genericsCmd.ManualRenameCmd)
 	rootCmd.AddCommand(genericsCmd.ConvertCmd)
 	rootCmd.AddCommand(genericsCmd.TasksCmd)
+	rootCmd.AddCommand(genericsCmd.OTPCmd)
 	rootCmd.AddCommand(genericsCmd.MarkdownCmd)
 	rootCmd.AddCommand(interactionsCmd.FSSyncCmd)
 	rootCmd.AddCommand(interactionsCmd.Neo4jCmd)

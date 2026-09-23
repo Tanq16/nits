@@ -21,7 +21,7 @@ A more robust tool is [anbu](https://github.com/tanq16/anbu). As and when I find
 | Images | `img-webp`, `img-dedup` | Image compression and duplicate detection |
 | Video | `video-optimize` / `video-opt` | Video size optimization (H.265/AV1 CPU, max 1080p, 8-bit SDR, HDR tone-mapping, interactive `--manual`) |
 | Data | `convert`, `neo4j` | Format conversion and Neo4j Cypher queries |
-| Productivity | `tasks` | Lightweight local task tracker with pending/done status |
+| Productivity | `tasks`, `otp` | Lightweight local task tracker and TOTP code generator |
 | Diagrams | `mermaid-svg`, `markdown`/`md` | Mermaid SVG conversion and markdown viewer |
 | Network | `fs-sync` | One-shot bidirectional file synchronization over HTTP/HTTPS |
 | System | `setup` | Check if required third-party tools are installed |
@@ -260,6 +260,17 @@ nits tasks add
 nits tasks list [--done] [--filter REGEX]
 nits tasks done ID
 nits tasks delete ID
+```
+
+#### `otp`
+
+Local TOTP (RFC 6238) store, at `~/.config/nits/otp.json`. `add` takes a base32 secret or an `otpauth://totp/` URI, and `get` prints only the current code.
+
+```bash
+nits otp add NAME SECRET_OR_URI
+nits otp get NAME
+nits otp list
+nits otp delete NAME
 ```
 
 #### `markdown` / `md`
