@@ -14,6 +14,7 @@ var MarkdownCmd = &cobra.Command{
 	Use:     "markdown",
 	Aliases: []string{"md"},
 	Short:   "Start a markdown viewer web server",
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := generics.StartMarkdownServer(markdownFlags.listenAddress); err != nil {
 			u.PrintFatal("Failed to start markdown viewer", err)

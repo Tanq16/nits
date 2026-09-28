@@ -12,16 +12,12 @@ GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
 # Asset versions
-TAILWIND_VERSION := latest
-MERMAIDJS_VERSION := 10.9.0
 MARKED_VERSION := 17.0.5
 MD_MERMAIDJS_VERSION := 11.4.0
 HIGHLIGHTJS_VERSION := 11.11.1
 LUCIDE_VERSION := 0.469.0
 
 # Directories
-STATIC_DIR := internal/server/static
-JS_DIR := $(STATIC_DIR)/js
 MD_STATIC_DIR := internal/generics/static
 MD_JS_DIR := $(MD_STATIC_DIR)/js
 MD_CSS_DIR := $(MD_STATIC_DIR)/css
@@ -45,12 +41,7 @@ help: ## Show this help
 # =============================================================================
 # Assets
 # =============================================================================
-assets: ## Download static assets for mermaid-svg and markdown commands
-	@echo "$(CYAN)Downloading assets...$(NC)"
-	@mkdir -p $(JS_DIR)
-	@curl -sL "https://cdn.tailwindcss.com" -o "$(JS_DIR)/tailwindcss.js"
-	@curl -sL "https://cdn.jsdelivr.net/npm/mermaid@$(MERMAIDJS_VERSION)/dist/mermaid.min.js" -o "$(JS_DIR)/mermaid.min.js"
-	@echo "$(GREEN)Assets downloaded$(NC)"
+assets: ## Download static assets for markdown command
 	@echo "$(CYAN)Downloading markdown viewer assets...$(NC)"
 	@mkdir -p $(MD_JS_DIR) $(MD_CSS_DIR) $(MD_FONTS_DIR)
 	@curl -sL -o $(MD_JS_DIR)/marked.min.js "https://cdn.jsdelivr.net/npm/marked@$(MARKED_VERSION)/lib/marked.umd.js"
@@ -77,8 +68,6 @@ assets: ## Download static assets for mermaid-svg and markdown commands
 	@echo "$(GREEN)Markdown viewer assets downloaded to $(MD_STATIC_DIR)/$(NC)"
 
 verify-assets: ## Verify required assets exist
-	@test -f $(JS_DIR)/tailwindcss.js || (echo "$(YELLOW)tailwindcss.js missing. Run 'make assets'$(NC)" && exit 1)
-	@test -f $(JS_DIR)/mermaid.min.js || (echo "$(YELLOW)mermaid.min.js missing. Run 'make assets'$(NC)" && exit 1)
 	@MISSING=0; \
 	for f in $(MD_JS_DIR)/tailwindcss.js $(MD_JS_DIR)/marked.min.js $(MD_JS_DIR)/mermaid.min.js $(MD_JS_DIR)/highlight.min.js $(MD_JS_DIR)/lucide.min.js $(MD_CSS_DIR)/github-dark.min.css $(MD_CSS_DIR)/inter.css $(MD_CSS_DIR)/jetbrains-mono.css; do \
 		if [ ! -f "$$f" ]; then \
@@ -94,7 +83,6 @@ verify-assets: ## Verify required assets exist
 
 clean: ## Remove built artifacts and downloaded assets
 	@rm -f $(APP_NAME) $(APP_NAME)-*
-	@rm -rf $(JS_DIR)/*.js
 	@rm -rf $(MD_JS_DIR) $(MD_CSS_DIR) $(MD_FONTS_DIR)
 	@echo "$(GREEN)Cleaned$(NC)"
 

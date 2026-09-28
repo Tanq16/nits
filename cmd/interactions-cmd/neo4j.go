@@ -25,6 +25,7 @@ var neo4jCmdFlags struct {
 var Neo4jCmd = &cobra.Command{
 	Use:   "neo4j",
 	Short: "Execute inline or file-based Cypher queries against a Neo4j database",
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if neo4jCmdFlags.query != "" && neo4jCmdFlags.queryFile != "" {
 			u.PrintFatal("please provide either a query or a query file, not both", nil)

@@ -1,34 +1,17 @@
 package utils
 
 import (
-	"fmt"
-	"strings"
-
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
 )
 
 var (
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.ANSIColor(15)).
-			Padding(0, 1)
-
-	cellStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.ANSIColor(7)).
-			Padding(0, 1)
-
-	borderStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.ANSIColor(8))
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.ANSIColor(15)).Padding(0, 1)
+	cellStyle   = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(7)).Padding(0, 1)
+	borderStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(8))
 )
 
-// Note: table.HeaderRow == -1, data rows start at 0
 func PrintTable(headers []string, rows [][]string) {
-	if GlobalForAIFlag {
-		printMarkdownTable(headers, rows)
-		return
-	}
-
 	t := table.New().
 		Border(lipgloss.NormalBorder()).
 		BorderStyle(borderStyle).
@@ -40,29 +23,47 @@ func PrintTable(headers []string, rows [][]string) {
 			}
 			return cellStyle
 		})
-
 	PrintGeneric(t.Render())
 }
 
-func printMarkdownTable(headers []string, rows [][]string) {
-	if len(headers) == 0 {
+type Table struct {
+	Headers []string
+	Rows    [][]string
+	table   *table.Table
+}
+
+func NewTable(headers []string) *Table {
+	t := &Table{
+		Headers: headers,
+		Rows:    [][]string{},
+	}
+	t.table = table.New().
+		Headers(headers...).
+		Border(lipgloss.NormalBorder()).
+		BorderStyle(borderStyle).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle
+			}
+			return cellStyle
+		})
+	return t
+}
+
+func (t *Table) reconcileRows() {
+	if len(t.Rows) == 0 {
 		return
 	}
-	fmt.Println("| " + strings.Join(escapeCells(headers), " | ") + " |")
-	seps := make([]string, len(headers))
-	for i := range seps {
-		seps[i] = "---"
-	}
-	fmt.Println("| " + strings.Join(seps, " | ") + " |")
-	for _, row := range rows {
-		fmt.Println("| " + strings.Join(escapeCells(row), " | ") + " |")
+	for _, row := range t.Rows {
+		t.table.Row(row...)
 	}
 }
 
-func escapeCells(cells []string) []string {
-	escaped := make([]string, len(cells))
-	for i, cell := range cells {
-		escaped[i] = strings.ReplaceAll(cell, "|", "\\|")
-	}
-	return escaped
+func (t *Table) FormatTable() string {
+	t.reconcileRows()
+	return t.table.String()
+}
+
+func (t *Table) PrintTable() {
+	PrintGeneric(t.FormatTable())
 }

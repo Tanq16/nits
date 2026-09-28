@@ -4,36 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/goccy/go-yaml"
 )
-
-func TestFormatTimeAgo(t *testing.T) {
-	tests := []struct {
-		name string
-		d    time.Duration
-		want string
-	}{
-		{"zero", 0, "just now"},
-		{"negative (clock skew)", -5 * time.Minute, "just now"},
-		{"seconds", 30 * time.Second, "just now"},
-		{"minutes", 5 * time.Minute, "5m ago"},
-		{"just under an hour", 59 * time.Minute, "59m ago"},
-		{"hours", 3 * time.Hour, "3h ago"},
-		{"days", 2 * 24 * time.Hour, "2d ago"},
-		{"weeks", 10 * 24 * time.Hour, "1w ago"},
-		{"months", 45 * 24 * time.Hour, "1mo ago"},
-		{"years", 400 * 24 * time.Hour, "1y ago"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := formatTimeAgo(tt.d); got != tt.want {
-				t.Errorf("formatTimeAgo(%v) = %q, want %q", tt.d, got, tt.want)
-			}
-		})
-	}
-}
 
 func TestConvertData(t *testing.T) {
 	dir := t.TempDir()
@@ -245,42 +218,3 @@ func TestResolveUnderRoot(t *testing.T) {
 	}
 }
 
-func TestNextTaskID(t *testing.T) {
-	tests := []struct {
-		name  string
-		store *TaskStore
-		want  int
-	}{
-		{"empty store", &TaskStore{}, 1},
-		{"single task", &TaskStore{Tasks: []TaskEntry{{ID: 5}}}, 6},
-		{"non-sequential ids", &TaskStore{Tasks: []TaskEntry{{ID: 1}, {ID: 10}, {ID: 3}}}, 11},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := nextTaskID(tt.store); got != tt.want {
-				t.Errorf("nextTaskID() = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestFindAndRemoveTaskByID(t *testing.T) {
-	store := &TaskStore{Tasks: []TaskEntry{{ID: 1, Task: "a"}, {ID: 2, Task: "b"}}}
-
-	if task := findTaskByID(store, 2); task == nil || task.Task != "b" {
-		t.Errorf("findTaskByID(2) = %v, want task 'b'", task)
-	}
-	if task := findTaskByID(store, 99); task != nil {
-		t.Errorf("findTaskByID(99) = %v, want nil", task)
-	}
-
-	if !removeTaskByID(store, 1) {
-		t.Error("removeTaskByID(1) = false, want true")
-	}
-	if len(store.Tasks) != 1 || store.Tasks[0].ID != 2 {
-		t.Errorf("after removal, store.Tasks = %v, want only ID 2 remaining", store.Tasks)
-	}
-	if removeTaskByID(store, 1) {
-		t.Error("removeTaskByID(1) on already-removed task = true, want false")
-	}
-}

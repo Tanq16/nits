@@ -2,38 +2,32 @@
   <h1>nits</h1>
 
   <a href="https://github.com/tanq16/nits/actions/workflows/release.yaml"><img alt="Build Workflow" src="https://github.com/tanq16/nits/actions/workflows/release.yaml/badge.svg"></a>&nbsp;<a href="https://github.com/tanq16/nits/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/tanq16/nits"></a><br><br>
-  <a href="#capabilities">Capabilities</a> &bull; <a href="#installation">Installation</a> &bull; <a href="#usage">Usage</a> &bull; <a href="#tips-and-notes">Tips & Notes</a>
+  <a href="#capabilities">Capabilities</a> &bull; <a href="#installation">Installation</a> &bull; <a href="#usage">Usage</a> &bull; <a href="#notes">Notes</a>
 </div>
 
 ---
 
-A collection of tiny tools and scripts packaged as a single Go binary.
+nits is a local CLI toolkit for short, one-off operations packaged as a single Go binary.
 
-Most of these are conversions from Python scripts used over time. Converting to Go makes them easily usable across systems without worrying about dependencies.
-
-A more robust tool is [anbu](https://github.com/tanq16/anbu). As and when I find a script or tool implemented here more useful and more frequently used, I promote it to `anbu`.
+Anbu is the self-hosted IT hub for secrets, machines, and SSH, and nits is the local CLI toolkit.
 
 ## Capabilities
 
 | Category | Commands | Description |
-|----------|----------|-------------|
-| Files | `file-organizer`, `file-unzipper`, `file-json-uniq`, `manual-rename`/`mrename` | File management, organization, and interactive rename |
-| Images | `img-webp`, `img-dedup` | Image compression and duplicate detection |
-| Video | `video-optimize` / `video-opt` | Video size optimization (H.265/AV1 CPU, max 1080p, 8-bit SDR, HDR tone-mapping, interactive `--manual`) |
-| Data | `convert`, `neo4j` | Format conversion and Neo4j Cypher queries |
-| Productivity | `tasks`, `otp` | Lightweight local task tracker and TOTP code generator |
-| Diagrams | `mermaid-svg`, `markdown`/`md` | Mermaid SVG conversion and markdown viewer |
-| Network | `fs-sync` | One-shot bidirectional file synchronization over HTTP/HTTPS |
-| System | `setup` | Check if required third-party tools are installed |
+|---|---|---|
+| Files | `archive`, `rename`, `duplicates`, `file-unzipper`, `manual-rename` | Archives, regex bulk rename, file duplicates, zip flattening, interactive rename |
+| Images | `img-dedup` | Duplicate image detection via perceptual hashing |
+| Network | `download`, `github-release`, `http-server`, `ip-info`, `fs-sync` | HTTP downloads, GitHub release asset fetching, local file serving, IP lookup, bidirectional sync |
+| Generators | `uuid`, `random-string`, `passphrase`, `time` | UUIDs, random strings, Diceware passphrases, and timestamp parsing and diffs |
+| Data | `convert`, `markdown`, `neo4j` | Format conversions, markdown viewer server, and Neo4j Cypher queries |
 
 ## Installation
 
 ### Binary
 
-Download from [releases](https://github.com/tanq16/nits/releases):
+Download directly from [Releases](https://github.com/tanq16/nits/releases). Binaries are available for AMD64 and ARM64 on Linux and macOS:
 
 ```bash
-# Linux/macOS
 curl -sL https://github.com/tanq16/nits/releases/latest/download/nits-$(uname -s)-$(uname -m) -o nits
 chmod +x nits
 sudo mv nits /usr/local/bin/
@@ -41,254 +35,213 @@ sudo mv nits /usr/local/bin/
 
 ### Build from Source
 
+Requires Go 1.27 or newer:
+
 ```bash
-git clone https://github.com/tanq16/nits
+git clone https://github.com/tanq16/nits.git
 cd nits
 make build-local
 ```
 
-**Requirements:** Go v1.26+
-
 ## Usage
 
-### File Management
+All commands support `--debug` for structured debug logging.
 
-#### `file-organizer`
+### Files
 
-Group files into directories based on base name (e.g., `goku_1.jpg`, `goku_2.jpg` → `goku/`).
+#### `archive` (aliases: `c`, `e`)
+
+Create or extract zip archives with optional regex filters and AES-GCM encryption.
 
 ```bash
-nits file-organizer [--dry-run]
+nits archive create ./src ./docs
+nits archive c ./src -o backup.zip
+nits archive create ./src --include '\.go$' --exclude '_test\.go$'
+nits archive create ./src --bare
+echo pw | nits archive create ./src --encrypt -
+nits archive extract archive.zip.enc --password pw
+nits archive e backup.zip
+nits archive extract backup.zip --bare
 ```
 
-**Flags:**
-- `--dry-run, -r` - Check without making changes
+#### `rename`
 
-**Examples:**
+Batch rename files or directories with regular expressions and capture groups.
 
 ```bash
-# Organize files in current directory
-nits file-organizer
+nits rename 'old_(.*)' 'new_\1'
+nits rename --directories 'old_(.*)' 'new_\1'
+nits rename '(.*)\.(.*)' '\1_backup.\2'
+nits rename 'image-(\d+).jpg' 'IMG_\1.jpeg' --dry-run
+nits rename '(.*)' '\1_\uuid'
+nits rename '(.*)\.(.*)' '\1_\suid.\2'
+```
 
-# Preview changes without moving files
-nits file-organizer --dry-run
+#### `duplicates` (alias: `dup`)
+
+Find duplicate files by size and SHA-256 hash.
+
+```bash
+nits duplicates
+nits dup --recursive
+nits dup --delete
 ```
 
 #### `file-unzipper`
 
-Unzip all zip files in the current directory, creating a directory for each. Flattens single-subdirectory zips.
+Unzip all zip files in CWD, creating a directory for each and flattening single subdirectories.
 
 ```bash
-nits file-unzipper [--uuid-names]
-```
-
-**Flags:**
-- `--uuid-names, -u` - Rename directories and files to UUIDs
-
-**Examples:**
-
-```bash
-# Unzip all zip files in CWD
 nits file-unzipper
-
-# Unzip with UUID naming
 nits file-unzipper --uuid-names
 ```
 
-#### `file-json-uniq`
+#### `manual-rename` (alias: `mrename`)
 
-Remove duplicate items from a JSON slice based on a key.
-
-```bash
-nits file-json-uniq <file> --path <path> --key <key>
-```
-
-**Flags:**
-- `--path, -p` - Path to the slice in JSON (e.g., 'references')
-- `--key, -k` - Key to use for uniqueness (e.g., 'url')
-
-**Examples:**
-
-```bash
-# Remove duplicate references based on URL
-nits file-json-uniq data.json --path references --key url
-```
-
-### Image Processing
-
-#### `img-webp`
-
-Compress all images in current directory to WebP format with quality optimization.
-
-```bash
-nits img-webp [--dry-run] [--workers N]
-```
-
-**Flags:**
-- `--dry-run, -r` - Process images without deleting originals
-- `--workers, -w` - Number of workers for parallel processing (default: 4)
-
-**Examples:**
-
-```bash
-# Compress images to WebP
-nits img-webp
-
-# Preview compression without deleting originals
-nits img-webp --dry-run
-
-# Use 8 parallel workers
-nits img-webp --workers 8
-```
-
-#### `img-dedup`
-
-Find duplicate images in current directory using perceptual hashing.
-
-```bash
-nits img-dedup [--hamming-distance N] [--workers N]
-```
-
-**Flags:**
-- `--hamming-distance, -d` - Maximum Hamming distance for duplicate detection (default: 10)
-- `--workers, -w` - Number of workers for parallel processing (default: 4)
-
-**Examples:**
-
-```bash
-# Find duplicate images
-nits img-dedup
-
-# Use stricter duplicate detection
-nits img-dedup --hamming-distance 5
-```
-
-### Video Optimization
-
-#### `video-optimize` / `video-opt`
-
-Optimize a video file for maximum space reduction using H.265 (default, `libx265`, CRF 30, preset medium) or AV1 (`libsvtav1`, CRF 32, preset 6) CPU encoding in 8-bit `yuv420p`. Videos $> 1080\text{p}$ (e.g. 4K, 1440p) are automatically downscaled to fit within $1920\times 1080$ preserving aspect ratio; lower resolutions are kept at native size without resampling. 10-bit HDR sources are automatically tone-mapped to 8-bit standard dynamic range (SDR) to prevent washed-out colors. Audio is encoded to transparent 128 kbps AAC stereo.
-
-```bash
-nits video-optimize <file> [--codec hevc|av1] [--manual]
-```
-
-**Flags:**
-- `--codec, -c` - Video codec: `hevc` (default) or `av1` (libsvtav1)
-- `--manual, -m` - Interactively configure codec, CRF, target resolution, audio bitrate, and encoder speed preset via selection prompts
-
-**Examples:**
-
-```bash
-# Optimize with default HEVC settings (CRF 30, max 1080p, 8-bit SDR)
-nits video-optimize movie.mkv
-nits video-opt clip.mp4
-
-# Optimize using AV1
-nits video-optimize video.webm --codec av1
-
-# Interactively choose codec, quality, resolution, audio, and preset
-nits video-optimize movie.mkv --manual
-```
-
-### Diagrams
-
-#### `mermaid-svg`
-
-Start a web interface for creating Mermaid diagrams and exporting them as SVG/PNG.
-
-```bash
-nits mermaid-svg [--port PORT]
-```
-
-**Flags:**
-- `--port, -p` - Port to listen on (default: 8080)
-
-**Examples:**
-
-```bash
-# Start Mermaid SVG server on default port
-nits mermaid-svg
-
-# Use custom port
-nits mermaid-svg --port 9999
-```
-
-Then open `http://localhost:8080` in your browser to use the diagram editor.
-
-### System
-
-#### `setup`
-
-Check if required third-party tools are installed (ImageMagick, ffprobe, ffmpeg).
-
-```bash
-nits setup
-```
-
-### Rename & Convert
-
-#### `manual-rename` / `mrename`
-
-Interactively rename files and directories one by one, optionally including directories, hidden files, and extension changes.
+Interactively rename files and directories one by one.
 
 ```bash
 nits manual-rename
-nits mrename -d          # include directories
-nits mrename -H          # include hidden
-nits mrename -x          # allow extension changes
+nits mrename -d
+nits mrename -H
+nits mrename -x
 ```
 
-#### `convert`
+### Images
 
-Convert data between docker run/compose formats, URL encoding, and JWT decoding.
+#### `img-dedup`
+
+Find duplicate images in CWD using perceptual hashing.
 
 ```bash
-nits convert docker-compose "docker run ..."
-nits convert compose-docker compose.yaml
+nits img-dedup
+nits img-dedup --hamming-distance 5
+nits img-dedup --workers 8
+```
+
+### Network
+
+#### `download` (alias: `dl`)
+
+Multi-connection HTTP download with automatic fallback to single connection and resume.
+
+```bash
+nits download https://example.com/file.tar.gz
+nits dl https://example.com/file.tar.gz -o package.tar.gz
+nits dl https://example.com/file.tar.gz -c 16
+nits dl https://example.com/file.tar.gz -H "Authorization: Bearer token"
+nits dl https://example.com/file.tar.gz --proxy http://127.0.0.1:8080
+```
+
+#### `github-release` (aliases: `ghr`, `ghrelease`)
+
+Download assets from latest GitHub releases with platform auto-detection.
+
+```bash
+nits github-release tanq16/nits
+nits ghr https://github.com/tanq16/nits
+nits ghr tanq16/nits --asset nits-linux-amd64
+nits ghr tanq16/nits --manual
+nits ghr tanq16/nits -o nits.bin
+```
+
+#### `http-server`
+
+Serve the current working directory over HTTP, with optional file upload support.
+
+```bash
+nits http-server
+nits http-server -l 0.0.0.0:8080
+nits http-server --upload
+```
+
+#### `ip-info` (alias: `ip`)
+
+Display local network interfaces and public IP details.
+
+```bash
+nits ip-info
+nits ip-info --ipv6
+```
+
+#### `fs-sync`
+
+Bidirectional file synchronization over HTTP or HTTPS.
+
+```bash
+nits fs-sync serve --mode send -p 8080 -d ./data
+nits fs-sync client http://localhost:8080 -d ./backup
+```
+
+### Generators
+
+#### `passphrase`
+
+Generate Diceware-style hyphenated phrases with one capital and one digit by default.
+
+```bash
+nits passphrase
+nits passphrase -l 5
+nits passphrase --simple
+```
+
+#### `uuid`
+
+Generate UUID v7, UUID v4, or 18-character short identifiers.
+
+```bash
+nits uuid
+nits uuid --v4
+nits uuid --short
+nits uuid --v4 --short
+```
+
+#### `random-string` (alias: `random`)
+
+Generate cryptographic random strings.
+
+```bash
+nits random-string
+nits random -l 32
+nits random --hex
+nits random --digits
+nits random --alpha
+nits random --all
+```
+
+#### `time` (alias: `t`)
+
+Display current time, parse timestamps, and compute epoch differences.
+
+```bash
+nits time now
+nits t parse "13 Apr 25 16:30 EDT"
+nits t until "13 Apr 25 16:30 EDT"
+nits t diff 1744192475 1744497775
+nits t diff 1744192475
+```
+
+### Data
+
+#### `convert` (alias: `c`)
+
+Convert data between Docker run, Docker compose, URL encoding, and JWT decoding.
+
+```bash
+nits convert docker-compose "docker run -d -p 80:80 nginx"
+nits convert compose-docker docker-compose.yml
 nits convert url "Hello World"
 nits convert urld "Hello%20World"
 nits convert jwtd "$TOKEN"
 ```
 
-#### `tasks`
+#### `markdown` (alias: `md`)
 
-Lightweight personal task tracking with pending/done status, stored at `~/.config/nits/tasks.json`.
-
-```bash
-nits tasks add
-nits tasks list [--done] [--filter REGEX]
-nits tasks done ID
-nits tasks delete ID
-```
-
-#### `otp`
-
-Local TOTP (RFC 6238) store, at `~/.config/nits/otp.json`. `add` takes a base32 secret or an `otpauth://totp/` URI, and `get` prints only the current code.
-
-```bash
-nits otp add NAME SECRET_OR_URI
-nits otp get NAME
-nits otp list
-nits otp delete NAME
-```
-
-#### `markdown` / `md`
-
-Web-based markdown viewer with syntax highlighting and Mermaid diagram rendering.
+Start a local web server for rendering Markdown files with syntax highlighting and diagrams.
 
 ```bash
 nits markdown
-nits md -l :3000
-```
-
-#### `fs-sync`
-
-One-shot bidirectional file synchronization over HTTP/HTTPS.
-
-```bash
-nits fs-sync serve --mode send|receive -p 8080 -d DIR [--ignore] [-t] [--delete] [-r]
-nits fs-sync client URL -d DIR [--ignore] [-k] [--delete] [-r]
+nits md -l 0.0.0.0:3000
 ```
 
 #### `neo4j`
@@ -301,11 +254,9 @@ nits neo4j --query-file ./queries.yaml -o results.json
 nits neo4j --write -q "CREATE (n:Person {name: 'Alice'}) RETURN n"
 ```
 
-## Tips and Notes
+## Notes
 
-- Run `nits setup` to verify required third-party tools are installed
-- Use `--debug` for structured zerolog output, or `--for-ai` for plain-text AI-friendly output (mutually exclusive)
-- Build with `make build-local` (runs `make assets`) so embedded mermaid/markdown JS assets are present
-- Image commands require ImageMagick (`convert` or `magick`)
-- Video commands require FFmpeg (`ffprobe` and `ffmpeg`)
-- Releases follow semantic versioning based on commit messages (`[major-release]`, `[minor-release]`)
+- **Archive compatibility**: Encrypted `.enc` archives created by nits and anbu are fully cross-compatible.
+- **Perceptual hashing**: `img-dedup` runs in pure Go with no external ImageMagick dependency.
+- **Logging**: Passing `--debug` enables structured zerolog console or JSON output.
+- **Releases**: Releases are calculated automatically using `[major-release]` and `[minor-release]` commit markers.

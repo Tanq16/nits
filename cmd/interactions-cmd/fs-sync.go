@@ -34,6 +34,7 @@ var FSSyncCmd = &cobra.Command{
 var fsSyncServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start an HTTP server for file sync (use --mode to set direction)",
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if fsSyncServeFlags.mode != "send" && fsSyncServeFlags.mode != "receive" {
 			u.PrintFatal("--mode must be 'send' or 'receive'", nil)

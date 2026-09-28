@@ -6,8 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 func RunFileUnzipper(uuidNames bool) (int, error) {
@@ -119,8 +118,7 @@ func extractZip(zipPath, destDir string) error {
 
 
 func generateUUID() string {
-	ret, _ := uuid.NewRandom()
-	return ret.String()
+	return uuid.New().String()
 }
 
 func renameToUUIDs(dir string) {
