@@ -2,7 +2,8 @@ package interactionsCmd
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 
@@ -27,13 +28,6 @@ var Neo4jCmd = &cobra.Command{
 	Short: "Execute inline or file-based Cypher queries against a Neo4j database",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		if neo4jCmdFlags.query != "" && neo4jCmdFlags.queryFile != "" {
-			u.PrintFatal("please provide either a query or a query file, not both", nil)
-		}
-		if neo4jCmdFlags.query == "" && neo4jCmdFlags.queryFile == "" {
-			u.PrintFatal("a query or a query file is required", nil)
-		}
-
 		ctx := context.Background()
 		var results []interactions.QueryResult
 		var err error
@@ -49,7 +43,7 @@ var Neo4jCmd = &cobra.Command{
 			u.PrintFatal("failed to execute neo4j queries", err)
 		}
 
-		jsonData, err := json.MarshalIndent(results, "", "  ")
+		jsonData, err := json.Marshal(results, jsontext.WithIndent("  "))
 		if err != nil {
 			u.PrintFatal("failed to marshal results to JSON", err)
 		}
@@ -69,4 +63,7 @@ func init() {
 	Neo4jCmd.Flags().StringVar(&neo4jCmdFlags.queryFile, "query-file", "", "Path to a YAML file with a list of Cypher queries")
 	Neo4jCmd.Flags().StringVarP(&neo4jCmdFlags.outputFile, "output-file", "o", "neo4j-query-result.json", "Output file for the query results")
 	Neo4jCmd.Flags().BoolVar(&neo4jCmdFlags.writeMode, "write", false, "Open connection in write mode")
+
+	Neo4jCmd.MarkFlagsOneRequired("query", "query-file")
+	Neo4jCmd.MarkFlagsMutuallyExclusive("query", "query-file")
 }

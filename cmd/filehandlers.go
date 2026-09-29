@@ -33,6 +33,6 @@ var fileUnzipperCmd = &cobra.Command{
 }
 
 func init() {
-	fileUnzipperCmd.Flags().BoolVarP(&fileUnzipperFlags.uuidNames, "uuid-names", "u", false, "Rename directories and files to UUIDs")
+	fileUnzipperCmd.Flags().BoolVar(&fileUnzipperFlags.uuidNames, "uuid-names", false, "Rename directories and files to UUIDs")
 	rootCmd.AddCommand(fileUnzipperCmd)
 }

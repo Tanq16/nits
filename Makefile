@@ -1,4 +1,4 @@
-.PHONY: help assets verify-assets clean build-local build build-all test version
+.PHONY: help assets verify-assets clean build build-for build-all test version
 
 # =============================================================================
 # Variables
@@ -22,6 +22,10 @@ MD_STATIC_DIR := internal/generics/static
 MD_JS_DIR := $(MD_STATIC_DIR)/js
 MD_CSS_DIR := $(MD_STATIC_DIR)/css
 MD_FONTS_DIR := $(MD_STATIC_DIR)/fonts
+STAMP := $(MD_STATIC_DIR)/.assets-stamp
+
+# Google Fonts User-Agent (returns direct woff2 files)
+UA := Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
 
 # Console colors
 CYAN := \033[0;36m
@@ -41,30 +45,38 @@ help: ## Show this help
 # =============================================================================
 # Assets
 # =============================================================================
-assets: ## Download static assets for markdown command
+assets: $(STAMP) ## Download static assets for markdown command
+	@:
+
+$(STAMP): $(MAKEFILE_LIST)
 	@echo "$(CYAN)Downloading markdown viewer assets...$(NC)"
 	@mkdir -p $(MD_JS_DIR) $(MD_CSS_DIR) $(MD_FONTS_DIR)
-	@curl -sL -o $(MD_JS_DIR)/marked.min.js "https://cdn.jsdelivr.net/npm/marked@$(MARKED_VERSION)/lib/marked.umd.js"
-	@curl -sL -o $(MD_JS_DIR)/mermaid.min.js "https://cdn.jsdelivr.net/npm/mermaid@$(MD_MERMAIDJS_VERSION)/dist/mermaid.min.js"
-	@curl -sL -o $(MD_JS_DIR)/highlight.min.js "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/$(HIGHLIGHTJS_VERSION)/highlight.min.js"
-	@curl -sL -o $(MD_JS_DIR)/tailwindcss.js "https://cdn.tailwindcss.com/3.4.16"
-	@curl -sL -o $(MD_JS_DIR)/lucide.min.js "https://unpkg.com/lucide@$(LUCIDE_VERSION)/dist/umd/lucide.min.js"
-	@curl -sL -o $(MD_CSS_DIR)/github-dark.min.css "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/$(HIGHLIGHTJS_VERSION)/styles/github-dark.min.css"
-	@curl -sL -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-		-o /tmp/inter.css "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
-	@grep -o 'https://[^)]*' /tmp/inter.css | while read url; do \
+	@curl -sfL -o $(MD_JS_DIR)/marked.min.js "https://cdn.jsdelivr.net/npm/marked@$(MARKED_VERSION)/lib/marked.umd.js"
+	@curl -sfL -o $(MD_JS_DIR)/mermaid.min.js "https://cdn.jsdelivr.net/npm/mermaid@$(MD_MERMAIDJS_VERSION)/dist/mermaid.min.js"
+	@curl -sfL -o $(MD_JS_DIR)/highlight.min.js "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/$(HIGHLIGHTJS_VERSION)/highlight.min.js"
+	@curl -sfL -o $(MD_JS_DIR)/tailwindcss.js "https://cdn.tailwindcss.com/3.4.16"
+	@curl -sfL -o $(MD_JS_DIR)/lucide.min.js "https://unpkg.com/lucide@$(LUCIDE_VERSION)/dist/umd/lucide.min.js"
+	@curl -sfL -o $(MD_CSS_DIR)/github-dark.min.css "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/$(HIGHLIGHTJS_VERSION)/styles/github-dark.min.css"
+	@curl -sfL -H "User-Agent: $(UA)" \
+		-o /tmp/inter.raw "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+	@awk '/^\/\* /{keep = ($$0 ~ /^\/\* latin(-ext)? \*\/$$/)} keep' \
+		/tmp/inter.raw > /tmp/inter.css
+	@grep -o 'https://fonts.gstatic.com/[^)]*' /tmp/inter.css | while read url; do \
 		filename=$$(basename "$$url"); \
-		curl -sL -o $(MD_FONTS_DIR)/"$$filename" "$$url"; \
+		curl -sfL -o $(MD_FONTS_DIR)/"$$filename" "$$url"; \
 	done
-	@sed -E 's|url\(https://[^)]*/([^/)]*)\)|url(../fonts/\1)|g' /tmp/inter.css > $(MD_CSS_DIR)/inter.css
-	@curl -sL -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-		-o /tmp/jetbrains-mono.css "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-	@grep -o 'https://[^)]*' /tmp/jetbrains-mono.css | while read url; do \
+	@sed -E 's|https://fonts\.gstatic\.com/[^)]*/([^/)]*)|../fonts/\1|g' /tmp/inter.css > $(MD_CSS_DIR)/inter.css
+	@curl -sfL -H "User-Agent: $(UA)" \
+		-o /tmp/jetbrains-mono.raw "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+	@awk '/^\/\* /{keep = ($$0 ~ /^\/\* latin(-ext)? \*\/$$/)} keep' \
+		/tmp/jetbrains-mono.raw > /tmp/jetbrains-mono.css
+	@grep -o 'https://fonts.gstatic.com/[^)]*' /tmp/jetbrains-mono.css | while read url; do \
 		filename=$$(basename "$$url"); \
-		curl -sL -o $(MD_FONTS_DIR)/"$$filename" "$$url"; \
+		curl -sfL -o $(MD_FONTS_DIR)/"$$filename" "$$url"; \
 	done
-	@sed -E 's|url\(https://[^)]*/([^/)]*)\)|url(../fonts/\1)|g' /tmp/jetbrains-mono.css > $(MD_CSS_DIR)/jetbrains-mono.css
-	@rm -f /tmp/inter.css /tmp/jetbrains-mono.css
+	@sed -E 's|https://fonts\.gstatic\.com/[^)]*/([^/)]*)|../fonts/\1|g' /tmp/jetbrains-mono.css > $(MD_CSS_DIR)/jetbrains-mono.css
+	@rm -f /tmp/inter.raw /tmp/inter.css /tmp/jetbrains-mono.raw /tmp/jetbrains-mono.css
+	@touch $(STAMP)
 	@echo "$(GREEN)Markdown viewer assets downloaded to $(MD_STATIC_DIR)/$(NC)"
 
 verify-assets: ## Verify required assets exist
@@ -82,26 +94,26 @@ verify-assets: ## Verify required assets exist
 	@echo "$(GREEN)Assets verified$(NC)"
 
 clean: ## Remove built artifacts and downloaded assets
-	@rm -f $(APP_NAME) $(APP_NAME)-*
-	@rm -rf $(MD_JS_DIR) $(MD_CSS_DIR) $(MD_FONTS_DIR)
+	@rm -f $(APP_NAME) $(APP_NAME)-* $(STAMP)
+	@find $(MD_JS_DIR) $(MD_CSS_DIR) $(MD_FONTS_DIR) -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
 	@echo "$(GREEN)Cleaned$(NC)"
 
 # =============================================================================
 # Build
 # =============================================================================
-build-local: assets verify-assets ## Build binary for current platform
+build: assets verify-assets ## Build binary for current platform
 	@go build -ldflags="-s -w -X 'github.com/tanq16/$(APP_NAME)/cmd.AppVersion=$(VERSION)'" -o $(APP_NAME) .
 	@echo "$(GREEN)Built: ./$(APP_NAME)$(NC)"
 
-build: verify-assets ## Build binary for specified GOOS/GOARCH
+build-for: verify-assets ## Build binary for specified GOOS/GOARCH
 	@CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-s -w -X 'github.com/tanq16/$(APP_NAME)/cmd.AppVersion=$(VERSION)'" -o $(APP_NAME)-$(GOOS)-$(GOARCH) .
 	@echo "$(GREEN)Built: ./$(APP_NAME)-$(GOOS)-$(GOARCH)$(NC)"
 
 build-all: assets verify-assets ## Build all platform binaries
-	@$(MAKE) build GOOS=linux GOARCH=amd64
-	@$(MAKE) build GOOS=linux GOARCH=arm64
-	@$(MAKE) build GOOS=darwin GOARCH=amd64
-	@$(MAKE) build GOOS=darwin GOARCH=arm64
+	@$(MAKE) build-for GOOS=linux GOARCH=amd64
+	@$(MAKE) build-for GOOS=linux GOARCH=arm64
+	@$(MAKE) build-for GOOS=darwin GOARCH=amd64
+	@$(MAKE) build-for GOOS=darwin GOARCH=arm64
 
 # =============================================================================
 # Test

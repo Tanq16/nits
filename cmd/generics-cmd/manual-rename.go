@@ -1,6 +1,7 @@
 package genericsCmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,10 @@ var ManualRenameCmd = &cobra.Command{
 	Short:   "Interactively rename files and directories one by one, optionally including directories, hidden files, and extensions",
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		if !u.StdinIsTerminal {
+			u.PrintFatal("manual-rename requires an interactive terminal", nil)
+		}
+
 		currentDir, err := os.Getwd()
 		if err != nil {
 			u.PrintFatal("failed to get current directory", err)
@@ -41,7 +46,14 @@ var ManualRenameCmd = &cobra.Command{
 		for _, entry := range items {
 			oldName := entry.Name()
 			input, err := u.PromptInput(oldName+" →", "new name (Enter to skip)")
-			if err != nil || strings.TrimSpace(input) == "" || strings.TrimSpace(input) == oldName {
+			if err != nil {
+				if errors.Is(err, u.ErrNoTerminal) {
+					u.PrintFatal("manual-rename requires an interactive terminal", nil)
+				}
+				u.PrintIndentedWarn(fmt.Sprintf("%s → (skipped)", oldName), nil)
+				continue
+			}
+			if strings.TrimSpace(input) == "" || strings.TrimSpace(input) == oldName {
 				u.PrintIndentedWarn(fmt.Sprintf("%s → (skipped)", oldName), nil)
 				continue
 			}
@@ -71,8 +83,8 @@ var ManualRenameCmd = &cobra.Command{
 }
 
 func init() {
-	ManualRenameCmd.Flags().BoolVarP(&manualRenameFlags.includeDir, "include-dir", "d", false, "Include directories in the rename operation")
-	ManualRenameCmd.Flags().BoolVarP(&manualRenameFlags.hidden, "hidden", "H", false, "Include hidden files and directories")
-	ManualRenameCmd.Flags().BoolVarP(&manualRenameFlags.includeExtension, "include-extension", "x", false, "Allow changing file extension")
+	ManualRenameCmd.Flags().BoolVar(&manualRenameFlags.includeDir, "include-dir", false, "Include directories in the rename operation")
+	ManualRenameCmd.Flags().BoolVar(&manualRenameFlags.hidden, "hidden", false, "Include hidden files and directories")
+	ManualRenameCmd.Flags().BoolVar(&manualRenameFlags.includeExtension, "include-extension", false, "Allow changing file extension")
 }
 

@@ -2,13 +2,15 @@ package generics
 
 import (
 	"embed"
-	"encoding/json"
+	"encoding/json/v2"
+	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 //go:embed markdown-viewer.html
@@ -18,8 +20,8 @@ var markdownViewerHTML []byte
 var staticFiles embed.FS
 
 type FileNode struct {
-	IsDir    bool                `json:"isDir,omitempty"`
-	Children map[string]FileNode `json:"children,omitempty"`
+	IsDir    bool                `json:"isDir,omitzero"`
+	Children map[string]FileNode `json:"children,omitzero"`
 }
 
 type MarkdownServerOptions struct {
@@ -60,7 +62,7 @@ func (s *MarkdownServer) Setup() error {
 }
 
 func (s *MarkdownServer) Run() error {
-	log.Printf("INFO Markdown viewer started at http://%s/", s.Options.ListenAddress)
+	log.Info().Str("url", fmt.Sprintf("http://%s/", s.Options.ListenAddress)).Msg("markdown viewer started")
 	return http.ListenAndServe(s.Options.ListenAddress, withLogging(s.mux))
 }
 
@@ -87,12 +89,12 @@ func (s *MarkdownServer) serveHTML(w http.ResponseWriter, r *http.Request) {
 func (s *MarkdownServer) serveFileTree(w http.ResponseWriter, r *http.Request) {
 	tree, err := s.buildFileTree(s.Options.RootDir)
 	if err != nil {
-		log.Printf("ERROR failed to build file tree: %v", err)
+		log.Error().Err(err).Msg("failed to build file tree")
 		http.Error(w, "Failed to build file tree", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tree)
+	json.MarshalWrite(w, tree)
 }
 
 var supportedExts = map[string]bool{
@@ -149,7 +151,7 @@ func (s *MarkdownServer) serveFileContent(w http.ResponseWriter, r *http.Request
 	}
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		log.Printf("ERROR failed to read file %s: %v", fullPath, err)
+		log.Error().Err(err).Str("path", fullPath).Msg("failed to read file")
 		http.Error(w, "Failed to read file", http.StatusInternalServerError)
 		return
 	}
@@ -262,7 +264,7 @@ func pruneEmptyDirs(tree map[string]FileNode) {
 
 func withLogging(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s %s", r.RemoteAddr, r.Method, r.URL.Path)
+		log.Debug().Str("remote", r.RemoteAddr).Str("method", r.Method).Str("path", r.URL.Path).Msg("http request")
 		next.ServeHTTP(w, r)
 	}
 }
