@@ -26,19 +26,22 @@ type ImageInfo struct {
 	FileSize int64
 }
 
-func FindDuplicates(ctx context.Context, maxHammingDistance int, workers int) ([][]*ImageInfo, error) {
+func FindDuplicates(ctx context.Context, maxHammingDistance int, workers int) ([][]*ImageInfo, int, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	images, err := scanImages(ctx, dir, workers)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(images) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
-	return groupDuplicates(images, maxHammingDistance), nil
+	slices.SortFunc(images, func(a, b *ImageInfo) int {
+		return cmp.Compare(a.Filename, b.Filename)
+	})
+	return groupDuplicates(images, maxHammingDistance), len(images), nil
 }
 
 func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, error) {
@@ -127,7 +130,6 @@ func processImage(path string) *ImageInfo {
 	}
 }
 
-// PNG > WebP > JPG/JPEG — lower rank means preferred for keeping
 func formatRank(filename string) int {
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {

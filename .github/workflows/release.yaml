@@ -15,12 +15,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.26'
+          go-version: '1.27'
 
       - name: Download Assets
         run: make assets  # embed.FS needs static/ populated to compile
@@ -38,7 +38,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       release_created: ${{ steps.create_release.outputs.release_created }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -72,12 +72,12 @@ jobs:
         os: [linux, darwin]
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.26'
+          go-version: '1.27'
 
       - name: Download Assets
         run: make assets  # embed.FS needs static/ populated to compile
@@ -100,7 +100,7 @@ jobs:
     needs: [create-release, binaries]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Publish Release
         run: gh release edit "${{ needs.create-release.outputs.version }}" --draft=false

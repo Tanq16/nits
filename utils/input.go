@@ -2,50 +2,95 @@ package utils
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
-// stdinScanner is shared across calls so sequential PromptInput/PromptPassword
-// calls each read the next line instead of draining all of stdin on the first call
-var stdinScanner *bufio.Scanner
+var ErrNoTerminal = errors.New("no interactive terminal")
 
-func getStdinScanner() *bufio.Scanner {
-	if stdinScanner == nil {
-		if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice == 0 {
-			stdinScanner = bufio.NewScanner(os.Stdin)
+const stdinAnnotation = "stdin"
+const stdinResolvedAnnotation = "stdin-resolved"
+
+func MarkStdinLine(cmd *cobra.Command, name string) error {
+	return cmd.Flags().SetAnnotation(name, stdinAnnotation, []string{"line"})
+}
+
+func MarkStdinStream(cmd *cobra.Command, name string) error {
+	return cmd.Flags().SetAnnotation(name, stdinAnnotation, []string{"stream"})
+}
+
+func ResolveStdin(cmd *cobra.Command) error {
+	var target *pflag.Flag
+	var mode string
+	var err error
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		modes, ok := f.Annotations[stdinAnnotation]
+		if !ok || len(modes) == 0 || !f.Changed || f.Value.String() != "-" {
+			return
 		}
+		if target != nil {
+			err = fmt.Errorf("only one flag can read stdin: --%s and --%s were both given -", target.Name, f.Name)
+			return
+		}
+		target, mode = f, modes[0]
+	})
+	if err != nil || target == nil {
+		return err
 	}
-	return stdinScanner
+	if StdinIsTerminal {
+		return fmt.Errorf("--%s was given - but nothing is piped into stdin", target.Name)
+	}
+
+	var value string
+	if mode == "line" {
+		line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		value = strings.TrimRight(line, "\r\n")
+	} else {
+		data, readErr := io.ReadAll(os.Stdin)
+		if readErr != nil {
+			return readErr
+		}
+		value = strings.TrimRight(string(data), "\r\n")
+	}
+	if value == "" {
+		return fmt.Errorf("--%s was given - but stdin was empty", target.Name)
+	}
+	if err := target.Value.Set(value); err != nil {
+		return err
+	}
+	return cmd.Flags().SetAnnotation(target.Name, stdinResolvedAnnotation, []string{"true"})
 }
 
-func ReadPipedInput() string {
-	scanner := getStdinScanner()
-	if scanner == nil {
-		return ""
+func ReadFileFlag(cmd *cobra.Command, name string) (string, error) {
+	f := cmd.Flags().Lookup(name)
+	if f == nil {
+		return "", nil
 	}
-	var lines []string
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	value := f.Value.String()
+	if value == "" {
+		return "", nil
 	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
-}
-
-func ReadPipedLine() string {
-	scanner := getStdinScanner()
-	if scanner == nil {
-		return ""
+	if resolved, ok := f.Annotations[stdinResolvedAnnotation]; ok && len(resolved) > 0 {
+		return value, nil
 	}
-	if scanner.Scan() {
-		return strings.TrimSpace(scanner.Text())
+	data, err := os.ReadFile(value)
+	if err != nil {
+		return "", err
 	}
-	return ""
+	return strings.TrimRight(string(data), "\r\n"), nil
 }
 
 type inputModel struct {
@@ -61,7 +106,6 @@ func (m inputModel) Init() tea.Cmd {
 
 func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -74,7 +118,6 @@ func (m inputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	}
-
 	m.textInput, cmd = m.textInput.Update(msg)
 	return m, cmd
 }
@@ -87,49 +130,36 @@ func (m inputModel) View() tea.View {
 }
 
 func PromptInput(prompt string, placeholder string) (string, error) {
-	if GlobalForAIFlag {
-		return ReadPipedLine(), nil
+	if !StdinIsTerminal {
+		return "", ErrNoTerminal
 	}
 
 	ti := textinput.New()
 	ti.Placeholder = placeholder
 	ti.Prompt = prompt + " "
-	focusCmd := ti.Focus()
-
-	m := inputModel{textInput: ti, initCmd: focusCmd}
-	p := tea.NewProgram(m)
-
-	finalModel, err := p.Run()
+	m := inputModel{textInput: ti, initCmd: ti.Focus()}
+	finalModel, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return "", err
 	}
-
-	result := finalModel.(inputModel)
-	return strings.TrimSpace(result.value), nil
+	return strings.TrimSpace(finalModel.(inputModel).value), nil
 }
 
-// Security note: caller must ensure the returned value is never passed to Print functions
 func PromptPassword(prompt string) (string, error) {
-	if GlobalForAIFlag {
-		return ReadPipedLine(), nil
+	if !StdinIsTerminal {
+		return "", ErrNoTerminal
 	}
 
 	ti := textinput.New()
 	ti.Placeholder = "••••••••"
 	ti.Prompt = prompt + " "
 	ti.EchoMode = textinput.EchoPassword
-	focusCmd := ti.Focus()
-
-	m := inputModel{textInput: ti, initCmd: focusCmd}
-	p := tea.NewProgram(m)
-
-	finalModel, err := p.Run()
+	m := inputModel{textInput: ti, initCmd: ti.Focus()}
+	finalModel, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return "", err
 	}
-
-	result := finalModel.(inputModel)
-	return result.value, nil
+	return finalModel.(inputModel).value, nil
 }
 
 type textAreaModel struct {
@@ -145,7 +175,6 @@ func (m textAreaModel) Init() tea.Cmd {
 
 func (m textAreaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -158,7 +187,6 @@ func (m textAreaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	}
-
 	m.textarea, cmd = m.textarea.Update(msg)
 	return m, cmd
 }
@@ -171,39 +199,36 @@ func (m textAreaModel) View() tea.View {
 }
 
 func PromptTextArea(prompt string, placeholder string) (string, error) {
-	if GlobalForAIFlag {
-		return ReadPipedInput(), nil
+	if !StdinIsTerminal {
+		return "", ErrNoTerminal
 	}
 
 	PrintInfo(prompt)
 
 	ta := textarea.New()
 	ta.Placeholder = placeholder
-	focusCmd := ta.Focus()
-
-	m := textAreaModel{textarea: ta, initCmd: focusCmd}
-	p := tea.NewProgram(m)
-
-	finalModel, err := p.Run()
+	m := textAreaModel{textarea: ta, initCmd: ta.Focus()}
+	finalModel, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return "", err
 	}
-
-	result := finalModel.(textAreaModel)
-	return strings.TrimSpace(result.value), nil
+	return strings.TrimSpace(finalModel.(textAreaModel).value), nil
 }
+
+var (
+	selectCursorStyle   = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(12)).Bold(true)
+	selectSelectedStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(10))
+)
 
 type selectModel struct {
-	label    string
-	options  []string
-	cursor   int
-	selected int
-	done     bool
+	label   string
+	options []string
+	cursor  int
+	chosen  int
+	done    bool
 }
 
-func (m selectModel) Init() tea.Cmd {
-	return nil
-}
+func (m selectModel) Init() tea.Cmd { return nil }
 
 func (m selectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -218,11 +243,11 @@ func (m selectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			}
 		case "enter":
-			m.selected = m.cursor
+			m.chosen = m.cursor
 			m.done = true
 			return m, tea.Quit
 		case "ctrl+c", "esc":
-			m.selected = -1
+			m.chosen = -1
 			m.done = true
 			return m, tea.Quit
 		}
@@ -235,19 +260,14 @@ func (m selectModel) View() tea.View {
 		return tea.NewView("")
 	}
 	var b strings.Builder
-	if m.label != "" {
-		b.WriteString(infoStyle.Render("→ "+m.label) + "\n")
-	}
+	b.WriteString(m.label + "\n")
 	for i, opt := range m.options {
-		cursor := "  "
-		item := opt
-		if m.cursor == i {
-			cursor = "❯ "
-			item = infoStyle.Render(opt)
+		if i == m.cursor {
+			b.WriteString(selectCursorStyle.Render("> "+opt) + "\n")
+		} else {
+			b.WriteString("  " + opt + "\n")
 		}
-		b.WriteString(fmt.Sprintf("%s%s\n", cursor, item))
 	}
-	b.WriteString(warnStyle.Render("(Use arrows/j/k to move, Enter to select, Esc to cancel)"))
 	return tea.NewView(b.String())
 }
 
@@ -255,40 +275,28 @@ func PromptSelect(label string, options []string) (int, error) {
 	if len(options) == 0 {
 		return -1, nil
 	}
-	if GlobalForAIFlag {
-		line := strings.TrimSpace(ReadPipedLine())
-		if line == "" {
-			return -1, nil
-		}
-		idx, err := strconv.Atoi(line)
-		if err != nil || idx < 1 || idx > len(options) {
-			return -1, nil
-		}
-		return idx - 1, nil
+	if !StdinIsTerminal {
+		return -1, ErrNoTerminal
 	}
 
-	m := selectModel{label: label, options: options, cursor: 0, selected: -1}
-	p := tea.NewProgram(m)
-	finalModel, err := p.Run()
+	m := selectModel{label: label, options: options, chosen: -1}
+	finalModel, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return -1, err
 	}
-	res := finalModel.(selectModel)
-	return res.selected, nil
+	return finalModel.(selectModel).chosen, nil
 }
 
 type multiSelectModel struct {
-	label    string
-	options  []string
-	cursor   int
-	selected map[int]bool
-	done     bool
-	canceled bool
+	label     string
+	options   []string
+	cursor    int
+	selected  map[int]bool
+	cancelled bool
+	done      bool
 }
 
-func (m multiSelectModel) Init() tea.Cmd {
-	return nil
-}
+func (m multiSelectModel) Init() tea.Cmd { return nil }
 
 func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -302,17 +310,13 @@ func (m multiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.options)-1 {
 				m.cursor++
 			}
-		case "space":
-			if m.selected[m.cursor] {
-				delete(m.selected, m.cursor)
-			} else {
-				m.selected[m.cursor] = true
-			}
+		case " ":
+			m.selected[m.cursor] = !m.selected[m.cursor]
 		case "enter":
 			m.done = true
 			return m, tea.Quit
 		case "ctrl+c", "esc":
-			m.canceled = true
+			m.cancelled = true
 			m.done = true
 			return m, tea.Quit
 		}
@@ -325,23 +329,20 @@ func (m multiSelectModel) View() tea.View {
 		return tea.NewView("")
 	}
 	var b strings.Builder
-	if m.label != "" {
-		b.WriteString(infoStyle.Render("→ "+m.label) + "\n")
-	}
+	b.WriteString(m.label + " (space toggles, enter confirms)\n")
 	for i, opt := range m.options {
-		cursor := "  "
-		checked := "[ ] "
+		mark := "[ ]"
 		if m.selected[i] {
-			checked = "[✓] "
+			mark = selectSelectedStyle.Render("[x]")
 		}
-		item := opt
-		if m.cursor == i {
-			cursor = "❯ "
-			item = infoStyle.Render(opt)
+		line := mark + " " + opt
+		if i == m.cursor {
+			line = selectCursorStyle.Render("> ") + line
+		} else {
+			line = "  " + line
 		}
-		b.WriteString(fmt.Sprintf("%s%s%s\n", cursor, checked, item))
+		b.WriteString(line + "\n")
 	}
-	b.WriteString(warnStyle.Render("(Space to toggle, Enter to confirm, Esc to cancel)"))
 	return tea.NewView(b.String())
 }
 
@@ -349,36 +350,18 @@ func PromptMultiSelect(label string, options []string) (map[int]bool, error) {
 	if len(options) == 0 {
 		return nil, nil
 	}
-	if GlobalForAIFlag {
-		line := strings.TrimSpace(ReadPipedLine())
-		if line == "" || line == "none" {
-			return nil, nil
-		}
-		selected := make(map[int]bool)
-		parts := strings.Split(line, ",")
-		for _, part := range parts {
-			idx, err := strconv.Atoi(strings.TrimSpace(part))
-			if err == nil && idx >= 1 && idx <= len(options) {
-				selected[idx-1] = true
-			}
-		}
-		return selected, nil
+	if !StdinIsTerminal {
+		return nil, ErrNoTerminal
 	}
 
-	m := multiSelectModel{
-		label:    label,
-		options:  options,
-		cursor:   0,
-		selected: make(map[int]bool),
-	}
-	p := tea.NewProgram(m)
-	finalModel, err := p.Run()
+	m := multiSelectModel{label: label, options: options, selected: make(map[int]bool)}
+	finalModel, err := tea.NewProgram(m).Run()
 	if err != nil {
 		return nil, err
 	}
-	res := finalModel.(multiSelectModel)
-	if res.canceled {
+	result := finalModel.(multiSelectModel)
+	if result.cancelled {
 		return nil, nil
 	}
-	return res.selected, nil
+	return result.selected, nil
 }

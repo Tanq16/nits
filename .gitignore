@@ -1,7 +1,6 @@
 testdir
 nits
 nits-*
-internal/server/static/js/*.js
 internal/generics/static/js/*
 !internal/generics/static/js/.gitkeep
 internal/generics/static/css/*

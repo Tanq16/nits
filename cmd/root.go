@@ -1,22 +1,21 @@
 package cmd
 
 import (
-	"fmt"
+	"io"
 	"os"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"github.com/tanq16/nits/utils"
-
 	genericsCmd "github.com/tanq16/nits/cmd/generics-cmd"
 	interactionsCmd "github.com/tanq16/nits/cmd/interactions-cmd"
+	networkCmd "github.com/tanq16/nits/cmd/network-cmd"
+	"github.com/tanq16/nits/utils"
 )
 
 var AppVersion = "dev-build"
 var debugFlag bool
-var forAIFlag bool
 
 var rootCmd = &cobra.Command{
 	Use:     "nits",
@@ -25,48 +24,54 @@ var rootCmd = &cobra.Command{
 	CompletionOptions: cobra.CompletionOptions{
 		HiddenDefaultCmd: true,
 	},
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		return utils.ResolveStdin(cmd)
+	},
 }
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		utils.PrintFatal("Command failed", err)
 	}
 }
 
 func setupLogs() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	output := zerolog.ConsoleWriter{
-		Out:        os.Stdout,
-		TimeFormat: time.DateTime,
-		NoColor:    false,
+	var out io.Writer = os.Stdout
+	if utils.StdoutIsTerminal {
+		out = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.DateTime}
 	}
-	log.Logger = zerolog.New(output).With().Timestamp().Logger()
+	log.Logger = zerolog.New(out).With().Timestamp().Logger()
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	if debugFlag {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		utils.GlobalDebugFlag = true
 	}
-	if forAIFlag {
-		utils.GlobalForAIFlag = true
-		zerolog.SetGlobalLevel(zerolog.Disabled)
-	}
 }
 
 func init() {
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Enable debug logging")
-	rootCmd.PersistentFlags().BoolVar(&forAIFlag, "for-ai", false, "AI-friendly output (plain text, piped input)")
-	rootCmd.MarkFlagsMutuallyExclusive("debug", "for-ai")
-
 	cobra.OnInitialize(setupLogs)
 
+	rootCmd.AddCommand(networkCmd.DownloadCmd)
+	rootCmd.AddCommand(networkCmd.GitHubReleaseCmd)
+	rootCmd.AddCommand(networkCmd.HTTPServerCmd)
+	rootCmd.AddCommand(networkCmd.IPInfoCmd)
+
+	rootCmd.AddCommand(genericsCmd.ArchiveCmd)
+	rootCmd.AddCommand(genericsCmd.BulkRenameCmd)
+	rootCmd.AddCommand(genericsCmd.DuplicatesCmd)
+	rootCmd.AddCommand(genericsCmd.PassphraseCmd)
+	rootCmd.AddCommand(genericsCmd.UUIDCmd)
+	rootCmd.AddCommand(genericsCmd.RandomCmd)
+	rootCmd.AddCommand(genericsCmd.TimeCmd)
 	rootCmd.AddCommand(genericsCmd.ManualRenameCmd)
 	rootCmd.AddCommand(genericsCmd.ConvertCmd)
-	rootCmd.AddCommand(genericsCmd.TasksCmd)
-	rootCmd.AddCommand(genericsCmd.OTPCmd)
 	rootCmd.AddCommand(genericsCmd.MarkdownCmd)
+
 	rootCmd.AddCommand(interactionsCmd.FSSyncCmd)
 	rootCmd.AddCommand(interactionsCmd.Neo4jCmd)
 }

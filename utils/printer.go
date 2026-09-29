@@ -1,181 +1,171 @@
 package utils
 
 import (
-	"fmt"
 	"os"
-	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/rs/zerolog/log"
 )
 
-var (
-	infoStyle    = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(12))
-	successStyle = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(10))
-	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(9))
-	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(11))
-)
-
-func PrintInfo(msg string) {
+func PrintSuccess(text string) {
 	if GlobalDebugFlag {
-		log.Info().Msg(msg)
-	} else if GlobalForAIFlag {
-		fmt.Println("[INFO] " + msg)
-	} else {
-		fmt.Println(infoStyle.Render("→ " + msg))
+		log.Info().Msg(text)
+		return
 	}
+	lipgloss.Println(successStyle.Render(StyleSymbols["pass"] + " " + text))
 }
 
-func PrintSuccess(msg string) {
-	if GlobalDebugFlag {
-		log.Info().Msg(msg)
-	} else if GlobalForAIFlag {
-		fmt.Println("[OK] " + msg)
-	} else {
-		fmt.Println(successStyle.Render("✓ " + msg))
-	}
-}
-
-func PrintError(msg string, err error) {
+func PrintError(text string, err error) {
 	if GlobalDebugFlag {
 		if err != nil {
-			log.Error().Err(err).Msg(msg)
+			log.Error().Err(err).Msg(text)
 		} else {
-			log.Error().Msg(msg)
+			log.Error().Msg(text)
 		}
-	} else if GlobalForAIFlag {
-		fmt.Println("[ERROR] " + msg)
-	} else {
-		fmt.Println(errorStyle.Render("✗ " + msg))
+		return
 	}
+	lipgloss.Println(errorStyle.Render(StyleSymbols["fail"] + " " + text))
 }
 
-func PrintFatal(msg string, err error) {
-	if GlobalDebugFlag {
-		if err != nil {
-			log.Error().Err(err).Msg(msg)
-		} else {
-			log.Error().Msg(msg)
-		}
-	} else if GlobalForAIFlag {
-		fmt.Println("[ERROR] " + msg)
-	} else {
-		fmt.Println(errorStyle.Render("✗ " + msg))
-	}
+func PrintFatal(text string, err error) {
+	PrintError(text, err)
 	os.Exit(1)
 }
 
-func PrintWarn(msg string, err error) {
+func PrintWarn(text string, err error) {
 	if GlobalDebugFlag {
 		if err != nil {
-			log.Warn().Err(err).Msg(msg)
+			log.Warn().Err(err).Msg(text)
 		} else {
-			log.Warn().Msg(msg)
+			log.Warn().Msg(text)
 		}
-	} else if GlobalForAIFlag {
-		fmt.Println("[WARN] " + msg)
-	} else {
-		fmt.Println(warnStyle.Render("! " + msg))
+		return
 	}
+	lipgloss.Println(warningStyle.Render(StyleSymbols["warning"] + " " + text))
 }
 
-func PrintGeneric(msg string) {
-	fmt.Println(msg)
-}
-
-func PrintRunning(msg string) {
+func PrintInfo(text string) {
 	if GlobalDebugFlag {
-		log.Info().Msg(msg)
-	} else if GlobalForAIFlag {
-		fmt.Println("[RUNNING] " + msg)
-	} else {
-		fmt.Println(infoStyle.Render("↻ " + msg))
+		log.Info().Msg(text)
+		return
 	}
+	lipgloss.Println(infoStyle.Render(StyleSymbols["arrow"] + " " + text))
 }
 
-func PrintIndentedSuccess(msg string) {
+func PrintRunning(text string) {
 	if GlobalDebugFlag {
-		log.Info().Msg(msg)
-	} else if GlobalForAIFlag {
-		fmt.Println("[OK] " + msg)
-	} else {
-		fmt.Println(successStyle.Render("  ✓ " + msg))
+		log.Info().Msg(text)
+		return
 	}
+	lipgloss.Println(infoStyle.Render(StyleSymbols["running"] + " " + text))
 }
 
-func PrintIndentedError(msg string, err error) {
+func PrintIndentedSuccess(text string) {
+	if GlobalDebugFlag {
+		log.Info().Msg(text)
+		return
+	}
+	lipgloss.Println(successStyle.Render("  " + StyleSymbols["pass"] + " " + text))
+}
+
+func PrintIndentedError(text string, err error) {
 	if GlobalDebugFlag {
 		if err != nil {
-			log.Error().Err(err).Msg(msg)
+			log.Error().Err(err).Msg(text)
 		} else {
-			log.Error().Msg(msg)
+			log.Error().Msg(text)
 		}
-	} else if GlobalForAIFlag {
-		fmt.Println("[ERROR] " + msg)
-	} else {
-		fmt.Println(errorStyle.Render("  ✗ " + msg))
+		return
 	}
+	lipgloss.Println(errorStyle.Render("  " + StyleSymbols["fail"] + " " + text))
 }
 
-func PrintIndentedWarn(msg string, err error) {
+func PrintIndentedWarn(text string, err error) {
 	if GlobalDebugFlag {
 		if err != nil {
-			log.Warn().Err(err).Msg(msg)
+			log.Warn().Err(err).Msg(text)
 		} else {
-			log.Warn().Msg(msg)
+			log.Warn().Msg(text)
 		}
-	} else if GlobalForAIFlag {
-		fmt.Println("[WARN] " + msg)
-	} else {
-		fmt.Println(warnStyle.Render("  ! " + msg))
+		return
 	}
+	lipgloss.Println(warningStyle.Render("  " + StyleSymbols["warning"] + " " + text))
 }
 
-func PrintIndentedRunning(msg string) {
+func PrintIndentedRunning(text string) {
 	if GlobalDebugFlag {
-		log.Info().Msg(msg)
-	} else if GlobalForAIFlag {
-		fmt.Println("[RUNNING] " + msg)
-	} else {
-		fmt.Println(infoStyle.Render("  ↻ " + msg))
-	}
-}
-
-func ClearLines(n int) {
-	if GlobalDebugFlag || GlobalForAIFlag {
+		log.Info().Msg(text)
 		return
 	}
-	for range n {
-		fmt.Print("\033[A\033[2K")
-	}
+	lipgloss.Println(infoStyle.Render("  " + StyleSymbols["running"] + " " + text))
 }
 
-func ClearPreviousLine() {
-	if GlobalDebugFlag || GlobalForAIFlag {
-		return
-	}
-	fmt.Print("\033[A\033[2K")
-}
-
-func PrintProgress(label string, percent int) {
-	if percent > 100 {
-		percent = 100
-	}
-
+func PrintDebug(text string) {
 	if GlobalDebugFlag {
-		log.Info().Int("percent", percent).Msg(label)
+		log.Debug().Msg(text)
 		return
 	}
+	lipgloss.Println(debugStyle.Render(text))
+}
 
-	if GlobalForAIFlag {
-		fmt.Printf("[PROGRESS] %s: %d%%\n", label, percent)
+func PrintStream(text string) {
+	if GlobalDebugFlag {
+		log.Debug().Msg(text)
 		return
 	}
+	lipgloss.Println(streamStyle.Render(text))
+}
 
-	const barWidth = 10
-	filled := barWidth * percent / 100
-	empty := barWidth - filled
+func PrintGeneric(text string) {
+	lipgloss.Println(text)
+}
 
-	bar := strings.Repeat("⣿", filled) + strings.Repeat("⣀", empty)
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  ↻ %s: %s %d%%", label, bar, percent)))
+func FSuccess(text string) string {
+	if GlobalDebugFlag {
+		return text
+	}
+	return successStyle.Render(text)
+}
+
+func FError(text string) string {
+	if GlobalDebugFlag {
+		return text
+	}
+	return errorStyle.Render(text)
+}
+
+func FWarning(text string) string {
+	if GlobalDebugFlag {
+		return text
+	}
+	return warningStyle.Render(text)
+}
+
+func FInfo(text string) string {
+	if GlobalDebugFlag {
+		return text
+	}
+	return infoStyle.Render(text)
+}
+
+func FDebug(text string) string {
+	if GlobalDebugFlag {
+		return text
+	}
+	return debugStyle.Render(text)
+}
+
+func FStream(text string) string {
+	if GlobalDebugFlag {
+		return text
+	}
+	return streamStyle.Render(text)
+}
+
+func FGeneric(text string) string {
+	return text
+}
+
+func LineBreak() {
+	lipgloss.Println()
 }
