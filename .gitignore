@@ -9,3 +9,4 @@ internal/generics/static/fonts/*
 !internal/generics/static/fonts/.gitkeep
 .claude
 .agents
+internal/generics/static/.assets-stamp

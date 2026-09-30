@@ -32,7 +32,7 @@ type ModeResponse struct {
 
 type UploadRequest struct {
 	Files    []FileContent `json:"files"`
-	ToDelete []string      `json:"to_delete,omitempty"`
+	ToDelete []string      `json:"to_delete,omitzero"`
 }
 
 type PathIgnorer struct {

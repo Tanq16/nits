@@ -2,7 +2,7 @@
   <h1>nits</h1>
 
   <a href="https://github.com/tanq16/nits/actions/workflows/release.yaml"><img alt="Build Workflow" src="https://github.com/tanq16/nits/actions/workflows/release.yaml/badge.svg"></a>&nbsp;<a href="https://github.com/tanq16/nits/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/tanq16/nits"></a><br><br>
-  <a href="#capabilities">Capabilities</a> &bull; <a href="#installation">Installation</a> &bull; <a href="#usage">Usage</a> &bull; <a href="#notes">Notes</a>
+  <a href="#capabilities">Capabilities</a> &bull; <a href="#install">Install</a> &bull; <a href="#usage">Usage</a> &bull; <a href="#notes">Notes</a>
 </div>
 
 ---
@@ -21,14 +21,16 @@ Anbu is the self-hosted IT hub for secrets, machines, and SSH, and nits is the l
 | Generators | `uuid`, `random-string`, `passphrase`, `time` | UUIDs, random strings, Diceware passphrases, and timestamp parsing and diffs |
 | Data | `convert`, `markdown`, `neo4j` | Format conversions, markdown viewer server, and Neo4j Cypher queries |
 
-## Installation
+## Install
 
 ### Binary
 
 Download directly from [Releases](https://github.com/tanq16/nits/releases). Binaries are available for AMD64 and ARM64 on Linux and macOS:
 
 ```bash
-curl -sL https://github.com/tanq16/nits/releases/latest/download/nits-$(uname -s)-$(uname -m) -o nits
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+curl -sL "https://github.com/tanq16/nits/releases/latest/download/nits-${OS}-${ARCH}" -o nits
 chmod +x nits
 sudo mv nits /usr/local/bin/
 ```
@@ -40,7 +42,7 @@ Requires Go 1.27 or newer:
 ```bash
 git clone https://github.com/tanq16/nits.git
 cd nits
-make build-local
+make build
 ```
 
 ## Usage

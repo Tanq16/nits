@@ -32,8 +32,19 @@ func simple(ctx context.Context, url, outputPath string, client *Client, progres
 
 	var lastErr error
 	for retry := range maxRetries {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if retry > 0 {
-			time.Sleep(time.Duration(retry+1) * 500 * time.Millisecond)
+			timer := time.NewTimer(time.Duration(retry+1) * 500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
 			reconcile()
 		}
 		err := simpleAttempt(ctx, url, tempOutputPath, client, progress, &reported)

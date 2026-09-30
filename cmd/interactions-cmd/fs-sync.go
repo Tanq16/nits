@@ -8,8 +8,22 @@ import (
 	u "github.com/tanq16/nits/utils"
 )
 
+type syncMode string
+
+func (m *syncMode) String() string { return string(*m) }
+func (m *syncMode) Type() string   { return "send|receive" }
+
+func (m *syncMode) Set(v string) error {
+	switch v {
+	case "send", "receive":
+		*m = syncMode(v)
+		return nil
+	}
+	return fmt.Errorf("must be one of send, receive")
+}
+
 var fsSyncServeFlags struct {
-	mode      string
+	mode      syncMode
 	port      int
 	dir       string
 	ignore    string
@@ -36,9 +50,6 @@ var fsSyncServeCmd = &cobra.Command{
 	Short: "Start an HTTP server for file sync (use --mode to set direction)",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		if fsSyncServeFlags.mode != "send" && fsSyncServeFlags.mode != "receive" {
-			u.PrintFatal("--mode must be 'send' or 'receive'", nil)
-		}
 		protocol := "http"
 		if fsSyncServeFlags.enableTLS {
 			protocol = "https"
@@ -49,7 +60,7 @@ var fsSyncServeCmd = &cobra.Command{
 			SyncDir:     fsSyncServeFlags.dir,
 			IgnorePaths: fsSyncServeFlags.ignore,
 			EnableTLS:   fsSyncServeFlags.enableTLS,
-			Mode:        fsSyncServeFlags.mode,
+			Mode:        string(fsSyncServeFlags.mode),
 			DeleteExtra: fsSyncServeFlags.delete,
 			DryRun:      fsSyncServeFlags.dryRun,
 		}
@@ -108,20 +119,20 @@ var fsSyncClientCmd = &cobra.Command{
 
 
 func init() {
-	fsSyncServeCmd.Flags().StringVarP(&fsSyncServeFlags.mode, "mode", "m", "send", "Sync mode: 'send' (serve files) or 'receive' (accept files)")
+	fsSyncServeFlags.mode = "send"
+	fsSyncServeCmd.Flags().Var(&fsSyncServeFlags.mode, "mode", "Sync mode")
 	fsSyncServeCmd.Flags().IntVarP(&fsSyncServeFlags.port, "port", "p", 8080, "Port to listen on")
 	fsSyncServeCmd.Flags().StringVarP(&fsSyncServeFlags.dir, "dir", "d", ".", "Directory to sync")
 	fsSyncServeCmd.Flags().StringVar(&fsSyncServeFlags.ignore, "ignore", "", "Comma-separated patterns to ignore (e.g., '.git,node_modules')")
-	fsSyncServeCmd.Flags().BoolVarP(&fsSyncServeFlags.enableTLS, "tls", "t", false, "Enable HTTPS with self-signed cert")
+	fsSyncServeCmd.Flags().BoolVar(&fsSyncServeFlags.enableTLS, "tls", false, "Enable HTTPS with self-signed cert")
 	fsSyncServeCmd.Flags().BoolVar(&fsSyncServeFlags.delete, "delete", false, "Delete extra files not present on sender (receive mode only)")
-	fsSyncServeCmd.Flags().BoolVarP(&fsSyncServeFlags.dryRun, "dry-run", "r", false, "Show what would be synced without doing it (receive mode only)")
+	fsSyncServeCmd.Flags().BoolVar(&fsSyncServeFlags.dryRun, "dry-run", false, "Show what would be synced without doing it (receive mode only)")
 
 	fsSyncClientCmd.Flags().StringVarP(&fsSyncClientFlags.dir, "dir", "d", ".", "Local directory to sync")
 	fsSyncClientCmd.Flags().StringVar(&fsSyncClientFlags.ignore, "ignore", "", "Comma-separated patterns to ignore (e.g., '.git,node_modules')")
-	fsSyncClientCmd.Flags().BoolVarP(&fsSyncClientFlags.insecure, "insecure", "k", false, "Skip TLS certificate verification")
+	fsSyncClientCmd.Flags().BoolVar(&fsSyncClientFlags.insecure, "insecure", false, "Skip TLS certificate verification")
 	fsSyncClientCmd.Flags().BoolVar(&fsSyncClientFlags.delete, "delete", false, "Delete extra files not present on sender")
-	fsSyncClientCmd.Flags().BoolVarP(&fsSyncClientFlags.dryRun, "dry-run", "r", false, "Show what would be synced without doing it")
-
+	fsSyncClientCmd.Flags().BoolVar(&fsSyncClientFlags.dryRun, "dry-run", false, "Show what would be synced without doing it")
 
 	FSSyncCmd.AddCommand(fsSyncServeCmd)
 	FSSyncCmd.AddCommand(fsSyncClientCmd)

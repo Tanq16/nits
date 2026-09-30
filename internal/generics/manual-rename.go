@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// GetRenameCandidates returns directory entries eligible for renaming.
 func GetRenameCandidates(dir string, includeDir bool, hidden bool) ([]os.DirEntry, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -29,7 +28,6 @@ func GetRenameCandidates(dir string, includeDir bool, hidden bool) ([]os.DirEntr
 	return items, nil
 }
 
-// ComputeNewName formats the target filename, preserving extensions if requested.
 func ComputeNewName(oldName, input string, isDir bool, includeExtension bool) string {
 	newName := strings.TrimSpace(input)
 	if !includeExtension && !isDir {

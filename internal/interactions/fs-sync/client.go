@@ -3,7 +3,7 @@ package fssync
 import (
 	"bytes"
 	"crypto/tls"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"os"
@@ -120,7 +120,7 @@ func (c *Client) fetchMode() (string, error) {
 		return "", fmt.Errorf("server returned %d", resp.StatusCode)
 	}
 	var modeResp ModeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&modeResp); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &modeResp); err != nil {
 		return "", err
 	}
 	return modeResp.Mode, nil
@@ -304,7 +304,7 @@ func (c *Client) fetchManifest() (map[string]string, error) {
 		return nil, fmt.Errorf("server returned %d", resp.StatusCode)
 	}
 	var manifest ManifestResponse
-	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &manifest); err != nil {
 		return nil, err
 	}
 	return manifest.Files, nil
@@ -326,7 +326,7 @@ func (c *Client) fetchFiles(paths []string, cb ClientCallbacks) (int, error) {
 	}
 
 	var filesResp FilesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&filesResp); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &filesResp); err != nil {
 		return 0, err
 	}
 	count := 0

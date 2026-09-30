@@ -13,8 +13,6 @@ import (
 	"time"
 )
 
-// GenerateSelfSignedCert creates an in-memory self-signed TLS certificate valid
-// for localhost and loopback addresses, for tools that need ad-hoc HTTPS (e.g. fs-sync).
 func GenerateSelfSignedCert() (tls.Certificate, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

@@ -12,7 +12,6 @@ func TestExtractZip(t *testing.T) {
 	zipFile := filepath.Join(tempDir, "test.zip")
 	destDir := filepath.Join(tempDir, "extracted")
 
-	// Create a test zip file
 	f, err := os.Create(zipFile)
 	if err != nil {
 		t.Fatalf("failed to create zip file: %v", err)
@@ -32,12 +31,10 @@ func TestExtractZip(t *testing.T) {
 	}
 	f.Close()
 
-	// Extract zip
 	if err := extractZip(zipFile, destDir); err != nil {
 		t.Fatalf("extractZip failed: %v", err)
 	}
 
-	// Verify extracted file
 	content, err := os.ReadFile(filepath.Join(destDir, "hello.txt"))
 	if err != nil {
 		t.Fatalf("failed to read extracted file: %v", err)
@@ -58,7 +55,6 @@ func TestExtractZipSlipRejected(t *testing.T) {
 	}
 	zw := zip.NewWriter(f)
 
-	// Attempt path traversal outside destDir
 	w, err := zw.Create("../outside.txt")
 	if err != nil {
 		t.Fatalf("failed to create entry: %v", err)

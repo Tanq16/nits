@@ -3,9 +3,9 @@ package fssync
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
+	"encoding/json/v2"
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	u "github.com/tanq16/nits/utils"
 )
 
@@ -73,6 +74,7 @@ func (s *Server) Run() error {
 		}
 		server.TLSConfig = tlsConfig
 	}
+	serverErrChan := make(chan error, 1)
 	go func() {
 		var err error
 		if s.cfg.EnableTLS {
@@ -80,11 +82,16 @@ func (s *Server) Run() error {
 		} else {
 			err = server.ListenAndServe()
 		}
-		if err != nil && err != http.ErrServerClosed {
-			log.Printf("ERROR [fs-sync-server] Server error: %v", err)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("server error")
+			serverErrChan <- err
 		}
 	}()
-	<-s.serveDone
+	select {
+	case <-s.serveDone:
+	case err := <-serverErrChan:
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return server.Shutdown(ctx)
@@ -96,7 +103,7 @@ func (s *Server) handleMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ModeResponse{Mode: s.cfg.Mode})
+	json.MarshalWrite(w, ModeResponse{Mode: s.cfg.Mode})
 }
 
 func (s *Server) handleManifest(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +117,7 @@ func (s *Server) handleManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ManifestResponse{Files: manifest})
+	json.MarshalWrite(w, ManifestResponse{Files: manifest})
 }
 
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +126,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req FileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.UnmarshalRead(r.Body, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -130,13 +137,13 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		relPath := filepath.Clean(path)
 		if strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
-			log.Printf("WARN [fs-sync-server] Invalid path: %s", path)
+			log.Warn().Str("path", path).Msg("invalid path")
 			continue
 		}
 		fullPath := filepath.Join(s.cfg.SyncDir, relPath)
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
-			log.Printf("WARN [fs-sync-server] Failed to read file %s: %v", path, err)
+			log.Warn().Err(err).Str("path", path).Msg("failed to read file")
 			continue
 		}
 		files = append(files, FileContent{
@@ -145,7 +152,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(FilesResponse{Files: files})
+	json.MarshalWrite(w, FilesResponse{Files: files})
 	s.shutdown()
 }
 
@@ -155,25 +162,25 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var uploadReq UploadRequest
-	if err := json.NewDecoder(r.Body).Decode(&uploadReq); err != nil {
+	if err := json.UnmarshalRead(r.Body, &uploadReq); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if s.cfg.DryRun {
 		for _, file := range uploadReq.Files {
-			log.Printf("INFO [fs-sync-server] Dry Run: %s", file.Path)
+			log.Info().Str("path", file.Path).Msg("dry run")
 		}
 		if s.cfg.DeleteExtra {
 			for _, path := range uploadReq.ToDelete {
-				log.Printf("INFO [fs-sync-server] Dry Run (delete): %s", path)
+				log.Info().Str("path", path).Msg("dry run delete")
 			}
 		}
 		totalCount := len(uploadReq.Files) + len(uploadReq.ToDelete)
 		if totalCount == 0 {
-			log.Printf("WARN [fs-sync-server] no files would be synced")
+			log.Warn().Msg("no files would be synced")
 		} else {
-			log.Printf("INFO [fs-sync-server] %d file(s) would be synced", totalCount)
+			log.Info().Int("count", totalCount).Msg("files would be synced")
 		}
 		w.WriteHeader(http.StatusOK)
 		s.shutdown()
@@ -184,19 +191,19 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	for _, file := range uploadReq.Files {
 		relPath := filepath.Clean(file.Path)
 		if strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
-			log.Printf("WARN [fs-sync-server] Invalid path: %s", file.Path)
+			log.Warn().Str("path", file.Path).Msg("invalid path")
 			continue
 		}
 		fullPath := filepath.Join(s.cfg.SyncDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-			log.Printf("ERROR [fs-sync-server] Failed to create directory for %s: %v", file.Path, err)
+			log.Error().Err(err).Str("path", file.Path).Msg("failed to create directory")
 			continue
 		}
 		if err := os.WriteFile(fullPath, file.Content, 0644); err != nil {
-			log.Printf("ERROR [fs-sync-server] Failed to write %s: %v", file.Path, err)
+			log.Error().Err(err).Str("path", file.Path).Msg("failed to write file")
 			continue
 		}
-		log.Printf("INFO [fs-sync-server] Received: %s", file.Path)
+		log.Info().Str("path", file.Path).Msg("received file")
 		count++
 	}
 
@@ -209,9 +216,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			}
 			fullPath := filepath.Join(s.cfg.SyncDir, relPath)
 			if err := os.RemoveAll(fullPath); err != nil {
-				log.Printf("ERROR [fs-sync-server] Failed to delete %s: %v", path, err)
+				log.Error().Err(err).Str("path", path).Msg("failed to delete file")
 			} else {
-				log.Printf("INFO [fs-sync-server] Deleted: %s", path)
+				log.Info().Str("path", path).Msg("deleted file")
 				deletedCount++
 			}
 		}
@@ -219,9 +226,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	totalCount := count + deletedCount
 	if totalCount == 0 {
-		log.Printf("WARN [fs-sync-server] no files were synced")
+		log.Warn().Msg("no files were synced")
 	} else {
-		log.Printf("INFO [fs-sync-server] %d file(s) synced", totalCount)
+		log.Info().Int("count", totalCount).Msg("files synced")
 	}
 	w.WriteHeader(http.StatusOK)
 	s.shutdown()

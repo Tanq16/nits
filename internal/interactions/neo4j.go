@@ -58,6 +58,11 @@ func ExecuteNeo4jQueries(ctx context.Context, uri, user, password, database stri
 	defer session.Close(ctx)
 	var allResults []QueryResult
 	for _, query := range queries {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
 		records, err := executeQuery(ctx, session, query)
 		if err != nil {
 			allResults = append(allResults, QueryResult{
