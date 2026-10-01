@@ -17,6 +17,7 @@ import (
 )
 
 var ErrNoTerminal = errors.New("no interactive terminal")
+var ErrNoOptions = errors.New("no options to choose from")
 
 const stdinAnnotation = "stdin"
 const stdinResolvedAnnotation = "stdin-resolved"
@@ -272,11 +273,11 @@ func (m selectModel) View() tea.View {
 }
 
 func PromptSelect(label string, options []string) (int, error) {
-	if len(options) == 0 {
-		return -1, nil
-	}
 	if !StdinIsTerminal {
 		return -1, ErrNoTerminal
+	}
+	if len(options) == 0 {
+		return -1, ErrNoOptions
 	}
 
 	m := selectModel{label: label, options: options, chosen: -1}
@@ -347,11 +348,11 @@ func (m multiSelectModel) View() tea.View {
 }
 
 func PromptMultiSelect(label string, options []string) (map[int]bool, error) {
-	if len(options) == 0 {
-		return nil, nil
-	}
 	if !StdinIsTerminal {
 		return nil, ErrNoTerminal
+	}
+	if len(options) == 0 {
+		return nil, ErrNoOptions
 	}
 
 	m := multiSelectModel{label: label, options: options, selected: make(map[int]bool)}

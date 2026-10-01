@@ -11,51 +11,6 @@ import (
 	"time"
 )
 
-type ClientCallbacks struct {
-	OnInfo        func(msg string)
-	OnGeneric     func(msg string)
-	OnItemSuccess func(msg string)
-	OnWarn        func(msg string, err error)
-	OnSuccess     func(msg string)
-	OnError       func(msg string, err error)
-}
-
-func (cb ClientCallbacks) info(msg string) {
-	if cb.OnInfo != nil {
-		cb.OnInfo(msg)
-	}
-}
-
-func (cb ClientCallbacks) generic(msg string) {
-	if cb.OnGeneric != nil {
-		cb.OnGeneric(msg)
-	}
-}
-
-func (cb ClientCallbacks) itemSuccess(msg string) {
-	if cb.OnItemSuccess != nil {
-		cb.OnItemSuccess(msg)
-	}
-}
-
-func (cb ClientCallbacks) warn(msg string, err error) {
-	if cb.OnWarn != nil {
-		cb.OnWarn(msg, err)
-	}
-}
-
-func (cb ClientCallbacks) success(msg string) {
-	if cb.OnSuccess != nil {
-		cb.OnSuccess(msg)
-	}
-}
-
-func (cb ClientCallbacks) err(msg string, err error) {
-	if cb.OnError != nil {
-		cb.OnError(msg, err)
-	}
-}
-
 type ClientConfig struct {
 	ServerAddr  string
 	SyncDir     string
@@ -94,7 +49,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Run(cb ClientCallbacks) error {
+func (c *Client) Run(cb Callbacks) error {
 	mode, err := c.fetchMode()
 	if err != nil {
 		return fmt.Errorf("failed to detect server mode: %w", err)
@@ -126,7 +81,7 @@ func (c *Client) fetchMode() (string, error) {
 	return modeResp.Mode, nil
 }
 
-func (c *Client) pullFromServer(cb ClientCallbacks) error {
+func (c *Client) pullFromServer(cb Callbacks) error {
 	serverManifest, err := c.fetchManifest()
 	if err != nil {
 		return fmt.Errorf("failed to fetch manifest: %w", err)
@@ -192,7 +147,7 @@ func (c *Client) pullFromServer(cb ClientCallbacks) error {
 	return nil
 }
 
-func (c *Client) pushToServer(cb ClientCallbacks) error {
+func (c *Client) pushToServer(cb Callbacks) error {
 	serverManifest, err := c.fetchManifest()
 	if err != nil {
 		return fmt.Errorf("failed to fetch server manifest: %w", err)
@@ -293,7 +248,6 @@ func (c *Client) pushToServer(cb ClientCallbacks) error {
 	return nil
 }
 
-
 func (c *Client) fetchManifest() (map[string]string, error) {
 	resp, err := c.httpClient.Get(c.cfg.ServerAddr + "/manifest")
 	if err != nil {
@@ -310,7 +264,7 @@ func (c *Client) fetchManifest() (map[string]string, error) {
 	return manifest.Files, nil
 }
 
-func (c *Client) fetchFiles(paths []string, cb ClientCallbacks) (int, error) {
+func (c *Client) fetchFiles(paths []string, cb Callbacks) (int, error) {
 	reqBody, _ := json.Marshal(FileRequest{Paths: paths})
 	resp, err := c.httpClient.Post(
 		c.cfg.ServerAddr+"/files",
@@ -358,7 +312,7 @@ func (c *Client) compareManifests(server, local map[string]string) (toRequest, t
 	return
 }
 
-func (c *Client) deleteLocalFiles(paths []string, cb ClientCallbacks) (int, error) {
+func (c *Client) deleteLocalFiles(paths []string, cb Callbacks) (int, error) {
 	count := 0
 	for _, path := range paths {
 		fullPath := filepath.Join(c.cfg.SyncDir, path)
@@ -371,4 +325,3 @@ func (c *Client) deleteLocalFiles(paths []string, cb ClientCallbacks) (int, erro
 	}
 	return count, nil
 }
-

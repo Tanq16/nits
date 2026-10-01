@@ -1,4 +1,5 @@
 <div align="center">
+  <img src=".github/assets/logo.svg" alt="nits Logo" width="200">
   <h1>nits</h1>
 
   <a href="https://github.com/tanq16/nits/actions/workflows/release.yaml"><img alt="Build Workflow" src="https://github.com/tanq16/nits/actions/workflows/release.yaml/badge.svg"></a>&nbsp;<a href="https://github.com/tanq16/nits/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/tanq16/nits"></a><br><br>
@@ -19,7 +20,7 @@ Anbu is the self-hosted IT hub for secrets, machines, and SSH, and nits is the l
 | Images | `img-dedup` | Duplicate image detection via perceptual hashing |
 | Network | `download`, `github-release`, `http-server`, `ip-info`, `fs-sync` | HTTP downloads, GitHub release asset fetching, local file serving, IP lookup, bidirectional sync |
 | Generators | `uuid`, `random-string`, `passphrase`, `time` | UUIDs, random strings, Diceware passphrases, and timestamp parsing and diffs |
-| Data | `convert`, `markdown`, `neo4j` | Format conversions, markdown viewer server, and Neo4j Cypher queries |
+| Data | `convert`, `neo4j` | Format conversions and Neo4j Cypher queries |
 
 ## Install
 
@@ -100,13 +101,14 @@ nits file-unzipper --uuid-names
 
 #### `manual-rename` (alias: `mrename`)
 
-Interactively rename files and directories one by one.
+Interactively rename files and directories one by one. `--names-file` supplies the new names instead, one per line in listing order, where a blank line skips that item.
 
 ```bash
 nits manual-rename
-nits mrename -d
-nits mrename -H
-nits mrename -x
+nits mrename --include-dir
+nits mrename --hidden
+nits mrename --include-extension
+nits mrename --names-file ../names.txt
 ```
 
 ### Images
@@ -237,23 +239,14 @@ nits convert urld "Hello%20World"
 nits convert jwtd "$TOKEN"
 ```
 
-#### `markdown` (alias: `md`)
-
-Start a local web server for rendering Markdown files with syntax highlighting and diagrams.
-
-```bash
-nits markdown
-nits md -l 0.0.0.0:3000
-```
-
 #### `neo4j`
 
-Execute inline or file-based Cypher queries against a Neo4j database.
+Execute a YAML list of Cypher queries against a Neo4j database. `--uri`, `--user`, and `--password` fall back to `NITS_NEO4J_URI`, `NITS_NEO4J_USER`, and `NITS_NEO4J_PASSWORD`.
 
 ```bash
-nits neo4j -q "MATCH (n) RETURN n LIMIT 5"
+nits neo4j --query-file ./queries.yaml
 nits neo4j --query-file ./queries.yaml -o results.json
-nits neo4j --write -q "CREATE (n:Person {name: 'Alice'}) RETURN n"
+nits neo4j --write --query-file ./writes.yaml
 ```
 
 ## Notes

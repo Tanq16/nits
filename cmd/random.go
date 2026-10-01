@@ -1,4 +1,4 @@
-package genericsCmd
+package cmd
 
 import (
 	"github.com/spf13/cobra"
@@ -14,7 +14,7 @@ var randomFlags struct {
 	all    bool
 }
 
-var RandomCmd = &cobra.Command{
+var randomCmd = &cobra.Command{
 	Use:     "random-string",
 	Aliases: []string{"random"},
 	Short:   "Generate a random alphanumeric string",
@@ -40,10 +40,10 @@ var RandomCmd = &cobra.Command{
 }
 
 func init() {
-	RandomCmd.Flags().IntVarP(&randomFlags.length, "length", "l", 48, "Length of random string")
-	RandomCmd.Flags().BoolVar(&randomFlags.hex, "hex", false, "Use hexadecimal characters only")
-	RandomCmd.Flags().BoolVar(&randomFlags.digits, "digits", false, "Use digits only")
-	RandomCmd.Flags().BoolVar(&randomFlags.alpha, "alpha", false, "Use letters only")
-	RandomCmd.Flags().BoolVar(&randomFlags.all, "all", false, "Use letters, digits, and special characters")
-	RandomCmd.MarkFlagsMutuallyExclusive("hex", "digits", "alpha", "all")
+	randomCmd.Flags().IntVarP(&randomFlags.length, "length", "l", 48, "Length of random string")
+	randomCmd.Flags().BoolVar(&randomFlags.hex, "hex", false, "Use hexadecimal characters only")
+	randomCmd.Flags().BoolVar(&randomFlags.digits, "digits", false, "Use digits only")
+	randomCmd.Flags().BoolVar(&randomFlags.alpha, "alpha", false, "Use letters only")
+	randomCmd.Flags().BoolVar(&randomFlags.all, "all", false, "Use letters, digits, and special characters")
+	randomCmd.MarkFlagsMutuallyExclusive("hex", "digits", "alpha", "all")
 }

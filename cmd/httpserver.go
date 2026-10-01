@@ -1,4 +1,4 @@
-package networkCmd
+package cmd
 
 import (
 	"fmt"
@@ -13,11 +13,11 @@ var httpServerFlags struct {
 	enableUpload  bool
 }
 
-var HTTPServerCmd = &cobra.Command{
+var httpServerCmd = &cobra.Command{
 	Use:   "http-server",
 	Short: "Start a simple HTTP file server with optional file uploads",
 	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	Run: func(cmd *cobra.Command, args []string) {
 		server := network.NewHTTPServer(&network.HTTPServerOptions{
 			ListenAddress: httpServerFlags.listenAddress,
 			EnableUpload:  httpServerFlags.enableUpload,
@@ -28,15 +28,16 @@ var HTTPServerCmd = &cobra.Command{
 			OnError: u.PrintError,
 		})
 		if err := server.Setup(); err != nil {
-			return err
+			u.PrintFatal("failed to set up HTTP server", err)
 		}
-		defer server.Stop()
 		u.PrintInfo(fmt.Sprintf("HTTP server started on http://%s/", httpServerFlags.listenAddress))
-		return server.Run()
+		if err := server.Run(); err != nil {
+			u.PrintFatal("HTTP server error", err)
+		}
 	},
 }
 
 func init() {
-	HTTPServerCmd.Flags().StringVarP(&httpServerFlags.listenAddress, "listen", "l", "0.0.0.0:8080", "Address and port to listen on")
-	HTTPServerCmd.Flags().BoolVar(&httpServerFlags.enableUpload, "upload", false, "Enable file uploads via PUT requests")
+	httpServerCmd.Flags().StringVarP(&httpServerFlags.listenAddress, "listen", "l", "0.0.0.0:8080", "Address and port to listen on")
+	httpServerCmd.Flags().BoolVar(&httpServerFlags.enableUpload, "upload", false, "Enable file uploads via PUT requests")
 }

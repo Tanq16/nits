@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/goccy/go-yaml"
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 )
 
 type QueryResult struct {

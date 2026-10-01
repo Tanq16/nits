@@ -1,4 +1,4 @@
-package networkCmd
+package cmd
 
 import (
 	"context"
@@ -19,7 +19,7 @@ var downloadFlags struct {
 	connections int
 }
 
-var DownloadCmd = &cobra.Command{
+var downloadCmd = &cobra.Command{
 	Use:     "download <url>",
 	Aliases: []string{"dl"},
 	Short:   "Download a file over HTTP",
@@ -57,9 +57,9 @@ func runDownload(cmd *cobra.Command, args []string) {
 }
 
 func init() {
-	DownloadCmd.Flags().StringVarP(&downloadFlags.output, "output", "o", "", "Output file path")
-	DownloadCmd.Flags().StringVarP(&downloadFlags.proxy, "proxy", "p", "", "HTTP/HTTPS proxy URL")
-	DownloadCmd.Flags().StringVarP(&downloadFlags.userAgent, "user-agent", "a", "nits", "User agent")
-	DownloadCmd.Flags().StringArrayVarP(&downloadFlags.headers, "header", "H", nil, "Custom header as Key: Value (repeatable)")
-	DownloadCmd.Flags().IntVarP(&downloadFlags.connections, "connections", "c", 8, "Parallel connections for a range-capable download")
+	downloadCmd.Flags().StringVarP(&downloadFlags.output, "output", "o", "", "Output file path")
+	downloadCmd.Flags().StringVarP(&downloadFlags.proxy, "proxy", "p", "", "HTTP/HTTPS proxy URL")
+	downloadCmd.Flags().StringVarP(&downloadFlags.userAgent, "user-agent", "a", "nits", "User agent")
+	downloadCmd.Flags().StringArrayVarP(&downloadFlags.headers, "header", "H", nil, "Custom header as Key: Value (repeatable)")
+	downloadCmd.Flags().IntVarP(&downloadFlags.connections, "connections", "c", 8, "Parallel connections for a range-capable download")
 }

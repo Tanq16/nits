@@ -16,6 +16,23 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
+type ScanFailure struct {
+	Path string
+	Err  error
+}
+
+type DuplicateResult struct {
+	Groups   [][]*ImageInfo
+	Scanned  int
+	Failures []ScanFailure
+}
+
+type scanResult struct {
+	info *ImageInfo
+	path string
+	err  error
+}
+
 type ImageInfo struct {
 	Filepath string
 	Filename string
@@ -26,28 +43,32 @@ type ImageInfo struct {
 	FileSize int64
 }
 
-func FindDuplicates(ctx context.Context, maxHammingDistance int, workers int) ([][]*ImageInfo, int, error) {
+func FindDuplicates(ctx context.Context, maxHammingDistance int, workers int) (DuplicateResult, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return nil, 0, err
+		return DuplicateResult{}, err
 	}
-	images, err := scanImages(ctx, dir, workers)
+	images, failures, err := scanImages(ctx, dir, workers)
 	if err != nil {
-		return nil, 0, err
-	}
-	if len(images) == 0 {
-		return nil, 0, nil
+		return DuplicateResult{}, err
 	}
 	slices.SortFunc(images, func(a, b *ImageInfo) int {
 		return cmp.Compare(a.Filename, b.Filename)
 	})
-	return groupDuplicates(images, maxHammingDistance), len(images), nil
+	slices.SortFunc(failures, func(a, b ScanFailure) int {
+		return cmp.Compare(a.Path, b.Path)
+	})
+	return DuplicateResult{
+		Groups:   groupDuplicates(images, maxHammingDistance),
+		Scanned:  len(images),
+		Failures: failures,
+	}, nil
 }
 
-func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, error) {
+func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, []ScanFailure, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var paths []string
 	for _, entry := range entries {
@@ -61,10 +82,10 @@ func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, err
 		paths = append(paths, filepath.Join(dir, entry.Name()))
 	}
 	if len(paths) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	pathChan := make(chan string, len(paths))
-	resultChan := make(chan *ImageInfo, len(paths))
+	resultChan := make(chan scanResult, len(paths))
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Go(func() {
@@ -74,10 +95,8 @@ func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, err
 					return
 				default:
 				}
-				info := processImage(path)
-				if info != nil {
-					resultChan <- info
-				}
+				info, err := processImage(path)
+				resultChan <- scanResult{info: info, path: path, err: err}
 			}
 		})
 	}
@@ -89,33 +108,38 @@ func scanImages(ctx context.Context, dir string, workers int) ([]*ImageInfo, err
 	close(resultChan)
 
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 
 	var images []*ImageInfo
-	for info := range resultChan {
-		images = append(images, info)
+	var failures []ScanFailure
+	for r := range resultChan {
+		if r.err != nil {
+			failures = append(failures, ScanFailure{Path: r.path, Err: r.err})
+			continue
+		}
+		images = append(images, r.info)
 	}
-	return images, nil
+	return images, failures, nil
 }
 
-func processImage(path string) *ImageInfo {
+func processImage(path string) (*ImageInfo, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer file.Close()
 	stat, err := file.Stat()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	img, _, err := image.Decode(file)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	hash, err := goimagehash.PerceptionHash(img)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
@@ -127,7 +151,7 @@ func processImage(path string) *ImageInfo {
 		Height:   h,
 		Area:     w * h,
 		FileSize: stat.Size(),
-	}
+	}, nil
 }
 
 func formatRank(filename string) int {

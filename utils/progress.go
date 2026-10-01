@@ -276,8 +276,7 @@ func (m *Meter) headerLine(width int) string {
 	return line
 }
 
-func (m *Meter) meterLine(width int) string {
-	pct := ""
+func (m *Meter) fields() (fixed, optionals []meterField) {
 	if m.total > 0 {
 		p := int(float64(m.current) * 100 / float64(m.total))
 		if p > 100 {
@@ -286,27 +285,20 @@ func (m *Meter) meterLine(width int) string {
 		if p < 0 {
 			p = 0
 		}
-		pct = fmt.Sprintf("%3d%%", p)
+		fixed = append(fixed, meterField{fmt.Sprintf("%3d%%", p), reservePercent})
 	}
-	transferred := formatPair(m.current, m.total, m.unit)
-	elapsed := time.Since(m.start)
-	rate := m.window.current()
-	avg := m.average(elapsed, true)
-	rateStr := formatRate(rate, m.unit)
-	etaStr := formatETA(m.total, m.current, rate)
-	avgStr := "avg " + formatRate(avg, m.unit)
+	fixed = append(fixed, meterField{formatPair(m.current, m.total, m.unit), reserveTransferred})
+	avg := m.average(time.Since(m.start), true)
+	optionals = []meterField{
+		{formatRate(m.window.current(), m.unit), reserveRate},
+		{formatETA(m.total, m.current, avg), reserveETA},
+		{"avg " + formatRate(avg, m.unit), reserveAvg},
+	}
+	return fixed, optionals
+}
 
-	fixed := make([]meterField, 0, 2)
-	if pct != "" {
-		fixed = append(fixed, meterField{pct, reservePercent})
-	}
-	fixed = append(fixed, meterField{transferred, reserveTransferred})
-	optionals := []meterField{
-		{rateStr, reserveRate},
-		{etaStr, reserveETA},
-		{avgStr, reserveAvg},
-	}
-
+func (m *Meter) meterLine(width int) string {
+	fixed, optionals := m.fields()
 	for drop := 0; drop <= len(optionals); drop++ {
 		fields := append(append([]meterField{}, fixed...), optionals[:len(optionals)-drop]...)
 		reserved := 0
@@ -322,17 +314,6 @@ func (m *Meter) meterLine(width int) string {
 				parts = append(parts, f.text)
 			}
 			return strings.Repeat(" ", meterIndent) + strings.Join(parts, "  ")
-		}
-	}
-	for drop := 0; drop <= len(optionals); drop++ {
-		fields := append(append([]meterField{}, fixed...), optionals[:len(optionals)-drop]...)
-		parts := make([]string, 0, len(fields))
-		for _, f := range fields {
-			parts = append(parts, f.text)
-		}
-		line := strings.Repeat(" ", meterIndent) + strings.Join(parts, "  ")
-		if displayLen(line) <= width {
-			return line
 		}
 	}
 	parts := make([]string, 0, len(fixed))
@@ -373,16 +354,10 @@ func (m *Meter) bar(width int) string {
 }
 
 func (m *Meter) pipedLine() string {
+	fixed, optionals := m.fields()
 	parts := []string{StyleSymbols["running"] + " " + m.verb + " " + m.name}
-	if m.total > 0 {
-		p := int(float64(m.current) * 100 / float64(m.total))
-		parts = append(parts, fmt.Sprintf("%d%%", p), formatPair(m.current, m.total, m.unit))
-	} else {
-		parts = append(parts, formatPair(m.current, m.total, m.unit))
-	}
-	rate := m.window.current()
-	if rate > 0 {
-		parts = append(parts, formatRate(rate, m.unit))
+	for _, f := range append(fixed, optionals...) {
+		parts = append(parts, strings.TrimSpace(f.text))
 	}
 	return strings.Join(parts, "  ")
 }
@@ -393,7 +368,7 @@ func (m *Meter) debugTick() {
 		pct = int(float64(m.current) * 100 / float64(m.total))
 	}
 	rate := m.window.current()
-	eta := formatETA(m.total, m.current, rate)
+	eta := formatETA(m.total, m.current, m.average(time.Since(m.start), true))
 	log.Info().
 		Int("percent", pct).
 		Int64("current", m.current).

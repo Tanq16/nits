@@ -1,6 +1,7 @@
-package networkCmd
+package cmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -26,7 +27,7 @@ var ghReleaseFlags struct {
 	manual    bool
 }
 
-var GitHubReleaseCmd = &cobra.Command{
+var gitHubReleaseCmd = &cobra.Command{
 	Use:     "github-release <owner/repo or url>",
 	Aliases: []string{"ghr", "ghrelease"},
 	Short:   "Download a GitHub release asset",
@@ -44,11 +45,11 @@ func runGitHubRelease(cmd *cobra.Command, args []string) {
 	}
 
 	headers := download.ParseHeaders(ghReleaseFlags.headers)
-	if ghReleaseFlags.token != "" {
+	if token := cmp.Or(ghReleaseFlags.token, os.Getenv("GITHUB_TOKEN")); token != "" {
 		if headers == nil {
 			headers = map[string]string{}
 		}
-		headers["Authorization"] = "Bearer " + ghReleaseFlags.token
+		headers["Authorization"] = "Bearer " + token
 	}
 	client, err := download.NewClient(download.ClientConfig{
 		ProxyURL:  ghReleaseFlags.proxy,
@@ -108,6 +109,9 @@ func runGitHubRelease(cmd *cobra.Command, args []string) {
 }
 
 func pickAsset(release ghrelease.Release) (ghrelease.Asset, bool, error) {
+	if len(release.Assets) == 0 {
+		return ghrelease.Asset{}, false, fmt.Errorf("release %s has no assets", release.Tag)
+	}
 	if ghReleaseFlags.asset != "" {
 		asset, ok := ghrelease.FindAsset(release.Assets, ghReleaseFlags.asset)
 		if !ok {
@@ -153,12 +157,12 @@ func formatAssetSize(n int64) string {
 }
 
 func init() {
-	GitHubReleaseCmd.Flags().StringVarP(&ghReleaseFlags.output, "output", "o", "", "Output file path")
-	GitHubReleaseCmd.Flags().StringVarP(&ghReleaseFlags.proxy, "proxy", "p", "", "HTTP/HTTPS proxy URL")
-	GitHubReleaseCmd.Flags().StringVarP(&ghReleaseFlags.userAgent, "user-agent", "a", "nits", "User agent")
-	GitHubReleaseCmd.Flags().StringArrayVarP(&ghReleaseFlags.headers, "header", "H", nil, "Custom header as Key: Value (repeatable)")
-	GitHubReleaseCmd.Flags().StringVar(&ghReleaseFlags.token, "token", os.Getenv("GITHUB_TOKEN"), "GitHub token (or GITHUB_TOKEN env)")
-	GitHubReleaseCmd.Flags().StringVar(&ghReleaseFlags.asset, "asset", "", "Release asset name to download")
-	GitHubReleaseCmd.Flags().BoolVar(&ghReleaseFlags.manual, "manual", false, "Select the release asset interactively")
-	GitHubReleaseCmd.MarkFlagsMutuallyExclusive("manual", "asset")
+	gitHubReleaseCmd.Flags().StringVarP(&ghReleaseFlags.output, "output", "o", "", "Output file path")
+	gitHubReleaseCmd.Flags().StringVarP(&ghReleaseFlags.proxy, "proxy", "p", "", "HTTP/HTTPS proxy URL")
+	gitHubReleaseCmd.Flags().StringVarP(&ghReleaseFlags.userAgent, "user-agent", "a", "nits", "User agent")
+	gitHubReleaseCmd.Flags().StringArrayVarP(&ghReleaseFlags.headers, "header", "H", nil, "Custom header as Key: Value (repeatable)")
+	gitHubReleaseCmd.Flags().StringVar(&ghReleaseFlags.token, "token", "", "GitHub token (or GITHUB_TOKEN env)")
+	gitHubReleaseCmd.Flags().StringVar(&ghReleaseFlags.asset, "asset", "", "Release asset name to download")
+	gitHubReleaseCmd.Flags().BoolVar(&ghReleaseFlags.manual, "manual", false, "Select the release asset interactively")
+	gitHubReleaseCmd.MarkFlagsMutuallyExclusive("manual", "asset")
 }

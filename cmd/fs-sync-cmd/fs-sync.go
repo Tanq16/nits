@@ -1,4 +1,4 @@
-package interactionsCmd
+package fsSyncCmd
 
 import (
 	"fmt"
@@ -68,7 +68,7 @@ var fsSyncServeCmd = &cobra.Command{
 		if err != nil {
 			u.PrintFatal("Failed to initialize server", err)
 		}
-		if err := s.Run(); err != nil {
+		if err := s.Run(printerCallbacks()); err != nil {
 			u.PrintFatal("Failed to run server", err)
 		}
 	},
@@ -91,32 +91,22 @@ var fsSyncClientCmd = &cobra.Command{
 		if err != nil {
 			u.PrintFatal("Failed to initialize client", err)
 		}
-		cb := fssync.ClientCallbacks{
-			OnInfo: func(msg string) {
-				u.PrintInfo(msg)
-			},
-			OnGeneric: func(msg string) {
-				u.PrintGeneric(msg)
-			},
-			OnItemSuccess: func(msg string) {
-				u.PrintIndentedSuccess(msg)
-			},
-			OnWarn: func(msg string, err error) {
-				u.PrintWarn(msg, err)
-			},
-			OnSuccess: func(msg string) {
-				u.PrintSuccess(msg)
-			},
-			OnError: func(msg string, err error) {
-				u.PrintError(msg, err)
-			},
-		}
-		if err := c.Run(cb); err != nil {
+		if err := c.Run(printerCallbacks()); err != nil {
 			u.PrintFatal("Sync failed", err)
 		}
 	},
 }
 
+func printerCallbacks() fssync.Callbacks {
+	return fssync.Callbacks{
+		OnInfo:        u.PrintInfo,
+		OnGeneric:     u.PrintGeneric,
+		OnItemSuccess: u.PrintIndentedSuccess,
+		OnWarn:        u.PrintWarn,
+		OnSuccess:     u.PrintSuccess,
+		OnError:       u.PrintError,
+	}
+}
 
 func init() {
 	fsSyncServeFlags.mode = "send"

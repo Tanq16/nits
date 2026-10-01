@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	u "github.com/tanq16/nits/utils"
 )
 
@@ -30,6 +29,7 @@ type ServerConfig struct {
 type Server struct {
 	cfg       ServerConfig
 	ignorer   *PathIgnorer
+	cb        Callbacks
 	serveDone chan struct{}
 	closeOnce sync.Once
 }
@@ -54,7 +54,8 @@ func (s *Server) shutdown() {
 	s.closeOnce.Do(func() { close(s.serveDone) })
 }
 
-func (s *Server) Run() error {
+func (s *Server) Run(cb Callbacks) error {
+	s.cb = cb
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mode", s.handleMode)
 	mux.HandleFunc("/manifest", s.handleManifest)
@@ -83,7 +84,6 @@ func (s *Server) Run() error {
 			err = server.ListenAndServe()
 		}
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error().Err(err).Msg("server error")
 			serverErrChan <- err
 		}
 	}()
@@ -137,13 +137,13 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		relPath := filepath.Clean(path)
 		if strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
-			log.Warn().Str("path", path).Msg("invalid path")
+			s.cb.warn(fmt.Sprintf("Invalid path: %s", path), nil)
 			continue
 		}
 		fullPath := filepath.Join(s.cfg.SyncDir, relPath)
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
-			log.Warn().Err(err).Str("path", path).Msg("failed to read file")
+			s.cb.warn(fmt.Sprintf("Failed to read %s", path), err)
 			continue
 		}
 		files = append(files, FileContent{
@@ -169,18 +169,18 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	if s.cfg.DryRun {
 		for _, file := range uploadReq.Files {
-			log.Info().Str("path", file.Path).Msg("dry run")
+			s.cb.generic(fmt.Sprintf("Dry Run: %s", file.Path))
 		}
 		if s.cfg.DeleteExtra {
 			for _, path := range uploadReq.ToDelete {
-				log.Info().Str("path", path).Msg("dry run delete")
+				s.cb.generic(fmt.Sprintf("Dry Run (delete): %s", path))
 			}
 		}
 		totalCount := len(uploadReq.Files) + len(uploadReq.ToDelete)
 		if totalCount == 0 {
-			log.Warn().Msg("no files would be synced")
+			s.cb.warn("no files would be synced", nil)
 		} else {
-			log.Info().Int("count", totalCount).Msg("files would be synced")
+			s.cb.success(fmt.Sprintf("%d file(s) would be synced", totalCount))
 		}
 		w.WriteHeader(http.StatusOK)
 		s.shutdown()
@@ -191,19 +191,19 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	for _, file := range uploadReq.Files {
 		relPath := filepath.Clean(file.Path)
 		if strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
-			log.Warn().Str("path", file.Path).Msg("invalid path")
+			s.cb.warn(fmt.Sprintf("Invalid path: %s", file.Path), nil)
 			continue
 		}
 		fullPath := filepath.Join(s.cfg.SyncDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-			log.Error().Err(err).Str("path", file.Path).Msg("failed to create directory")
+			s.cb.err(fmt.Sprintf("Failed to create directory for %s", file.Path), err)
 			continue
 		}
 		if err := os.WriteFile(fullPath, file.Content, 0644); err != nil {
-			log.Error().Err(err).Str("path", file.Path).Msg("failed to write file")
+			s.cb.err(fmt.Sprintf("Failed to write %s", file.Path), err)
 			continue
 		}
-		log.Info().Str("path", file.Path).Msg("received file")
+		s.cb.itemSuccess(fmt.Sprintf("Received: %s", file.Path))
 		count++
 	}
 
@@ -216,9 +216,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			}
 			fullPath := filepath.Join(s.cfg.SyncDir, relPath)
 			if err := os.RemoveAll(fullPath); err != nil {
-				log.Error().Err(err).Str("path", path).Msg("failed to delete file")
+				s.cb.err(fmt.Sprintf("Failed to delete %s", path), err)
 			} else {
-				log.Info().Str("path", path).Msg("deleted file")
+				s.cb.itemSuccess(fmt.Sprintf("Deleted: %s", path))
 				deletedCount++
 			}
 		}
@@ -226,9 +226,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	totalCount := count + deletedCount
 	if totalCount == 0 {
-		log.Warn().Msg("no files were synced")
+		s.cb.warn("no files were synced", nil)
 	} else {
-		log.Info().Int("count", totalCount).Msg("files synced")
+		s.cb.success(fmt.Sprintf("%d file(s) synced", totalCount))
 	}
 	w.WriteHeader(http.StatusOK)
 	s.shutdown()
@@ -243,4 +243,3 @@ func (s *Server) getTLSConfig() (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 	}, nil
 }
-

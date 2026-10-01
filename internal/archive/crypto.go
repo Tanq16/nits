@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
-
-	"golang.org/x/crypto/pbkdf2"
 )
 
 const (
@@ -175,7 +174,10 @@ func decryptTo(dst io.Writer, src io.Reader, password string) error {
 }
 
 func newArchiveGCM(password string, salt []byte) (cipher.AEAD, error) {
-	key := pbkdf2.Key([]byte(password), salt, archiveKDFIter, 32, sha256.New)
+	key, err := pbkdf2.Key(sha256.New, password, salt, archiveKDFIter, 32)
+	if err != nil {
+		return nil, err
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
