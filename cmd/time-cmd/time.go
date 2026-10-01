@@ -1,4 +1,4 @@
-package genericsCmd
+package timeCmd
 
 import (
 	"fmt"

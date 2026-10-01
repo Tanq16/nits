@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -31,15 +32,24 @@ var imgDedupeCmd = &cobra.Command{
 		defer stop()
 
 		utils.PrintRunning("Scanning images for perceptual duplicates...")
-		groups, total, err := imagehandlers.FindDuplicates(ctx, imgDedupeFlags.hammingDistance, imgDedupeFlags.workers)
+		result, err := imagehandlers.FindDuplicates(ctx, imgDedupeFlags.hammingDistance, imgDedupeFlags.workers)
 		utils.ClearLines(1)
 		if err != nil {
 			utils.PrintFatal("Failed to find duplicate images", err)
 		}
-		if total == 0 {
-			utils.PrintInfo("No images found")
+		if len(result.Failures) > 0 {
+			utils.PrintWarn(fmt.Sprintf("Could not read %d image(s)", len(result.Failures)), nil)
+			for _, f := range result.Failures {
+				utils.PrintIndentedWarn(filepath.Base(f.Path), f.Err)
+			}
+		}
+		if result.Scanned == 0 {
+			if len(result.Failures) == 0 {
+				utils.PrintInfo("No images found")
+			}
 			return
 		}
+		groups := result.Groups
 		if len(groups) == 0 {
 			utils.PrintSuccess("No duplicate images found")
 			return
@@ -68,5 +78,4 @@ var imgDedupeCmd = &cobra.Command{
 func init() {
 	imgDedupeCmd.Flags().IntVarP(&imgDedupeFlags.hammingDistance, "hamming-distance", "d", 10, "Maximum Hamming distance for duplicate detection")
 	imgDedupeCmd.Flags().IntVarP(&imgDedupeFlags.workers, "workers", "w", 4, "Number of workers for parallel processing")
-	rootCmd.AddCommand(imgDedupeCmd)
 }

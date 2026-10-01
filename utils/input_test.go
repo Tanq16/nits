@@ -1,25 +1,19 @@
 package utils
 
 import (
+	"errors"
 	"testing"
 )
 
-func TestPromptSelectEmptyOptions(t *testing.T) {
-	idx, err := PromptSelect("Pick one", []string{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if idx != -1 {
-		t.Errorf("expected -1 for empty options, got %d", idx)
-	}
-}
+func TestPromptEmptyOptions(t *testing.T) {
+	saved := StdinIsTerminal
+	StdinIsTerminal = true
+	t.Cleanup(func() { StdinIsTerminal = saved })
 
-func TestPromptMultiSelectEmptyOptions(t *testing.T) {
-	sel, err := PromptMultiSelect("Pick multiple", []string{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if idx, err := PromptSelect("Pick one", nil); !errors.Is(err, ErrNoOptions) || idx != -1 {
+		t.Errorf("PromptSelect(nil) = %d, %v; want -1, ErrNoOptions", idx, err)
 	}
-	if sel != nil {
-		t.Errorf("expected nil for empty options, got %v", sel)
+	if sel, err := PromptMultiSelect("Pick multiple", nil); !errors.Is(err, ErrNoOptions) || sel != nil {
+		t.Errorf("PromptMultiSelect(nil) = %v, %v; want nil, ErrNoOptions", sel, err)
 	}
 }

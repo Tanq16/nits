@@ -1,4 +1,4 @@
-package genericsCmd
+package cmd
 
 import (
 	"github.com/spf13/cobra"
@@ -11,7 +11,7 @@ var passphraseFlags struct {
 	simple bool
 }
 
-var PassphraseCmd = &cobra.Command{
+var passphraseCmd = &cobra.Command{
 	Use:   "passphrase",
 	Short: "Generate a passphrase",
 	Args:  cobra.NoArgs,
@@ -25,6 +25,6 @@ var PassphraseCmd = &cobra.Command{
 }
 
 func init() {
-	PassphraseCmd.Flags().IntVarP(&passphraseFlags.length, "length", "l", 3, "Number of words in passphrase")
-	PassphraseCmd.Flags().BoolVar(&passphraseFlags.simple, "simple", false, "Use plain words with no capital letter or digit")
+	passphraseCmd.Flags().IntVarP(&passphraseFlags.length, "length", "l", 3, "Number of words in passphrase")
+	passphraseCmd.Flags().BoolVar(&passphraseFlags.simple, "simple", false, "Use plain words with no capital letter or digit")
 }

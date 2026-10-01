@@ -1,4 +1,4 @@
-package genericsCmd
+package cmd
 
 import (
 	"github.com/spf13/cobra"
@@ -11,7 +11,7 @@ var uuidFlags struct {
 	v4    bool
 }
 
-var UUIDCmd = &cobra.Command{
+var uuidCmd = &cobra.Command{
 	Use:   "uuid",
 	Short: "Generate a UUID v7, or v4 with --v4",
 	Args:  cobra.NoArgs,
@@ -31,6 +31,6 @@ var UUIDCmd = &cobra.Command{
 }
 
 func init() {
-	UUIDCmd.Flags().BoolVar(&uuidFlags.short, "short", false, "Generate a short UUID of length 18, stripping non-random bits")
-	UUIDCmd.Flags().BoolVar(&uuidFlags.v4, "v4", false, "Generate a UUID v4 instead of v7")
+	uuidCmd.Flags().BoolVar(&uuidFlags.short, "short", false, "Generate a short UUID of length 18, stripping non-random bits")
+	uuidCmd.Flags().BoolVar(&uuidFlags.v4, "v4", false, "Generate a UUID v4 instead of v7")
 }

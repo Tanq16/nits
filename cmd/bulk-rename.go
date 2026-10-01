@@ -1,4 +1,4 @@
-package genericsCmd
+package cmd
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ var bulkRenameFlags struct {
 	dryRun            bool
 }
 
-var BulkRenameCmd = &cobra.Command{
+var bulkRenameCmd = &cobra.Command{
 	Use:     "rename <pattern> <replacement>",
 	Aliases: []string{},
 	Short:   "Bulk rename files or directories using regex patterns",
@@ -55,6 +55,6 @@ Examples:
 }
 
 func init() {
-	BulkRenameCmd.Flags().BoolVar(&bulkRenameFlags.renameDirectories, "directories", false, "Rename directories instead of files")
-	BulkRenameCmd.Flags().BoolVar(&bulkRenameFlags.dryRun, "dry-run", false, "Simulate the rename operation without making changes")
+	bulkRenameCmd.Flags().BoolVar(&bulkRenameFlags.renameDirectories, "directories", false, "Rename directories instead of files")
+	bulkRenameCmd.Flags().BoolVar(&bulkRenameFlags.dryRun, "dry-run", false, "Simulate the rename operation without making changes")
 }

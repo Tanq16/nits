@@ -9,6 +9,51 @@ import (
 	"strings"
 )
 
+type Callbacks struct {
+	OnInfo        func(msg string)
+	OnGeneric     func(msg string)
+	OnItemSuccess func(msg string)
+	OnWarn        func(msg string, err error)
+	OnSuccess     func(msg string)
+	OnError       func(msg string, err error)
+}
+
+func (cb Callbacks) info(msg string) {
+	if cb.OnInfo != nil {
+		cb.OnInfo(msg)
+	}
+}
+
+func (cb Callbacks) generic(msg string) {
+	if cb.OnGeneric != nil {
+		cb.OnGeneric(msg)
+	}
+}
+
+func (cb Callbacks) itemSuccess(msg string) {
+	if cb.OnItemSuccess != nil {
+		cb.OnItemSuccess(msg)
+	}
+}
+
+func (cb Callbacks) warn(msg string, err error) {
+	if cb.OnWarn != nil {
+		cb.OnWarn(msg, err)
+	}
+}
+
+func (cb Callbacks) success(msg string) {
+	if cb.OnSuccess != nil {
+		cb.OnSuccess(msg)
+	}
+}
+
+func (cb Callbacks) err(msg string, err error) {
+	if cb.OnError != nil {
+		cb.OnError(msg, err)
+	}
+}
+
 type ManifestResponse struct {
 	Files map[string]string `json:"files"`
 }

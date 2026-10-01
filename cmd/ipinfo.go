@@ -1,4 +1,4 @@
-package networkCmd
+package cmd
 
 import (
 	"github.com/spf13/cobra"
@@ -10,7 +10,7 @@ var ipInfoFlags struct {
 	ipv6 bool
 }
 
-var IPInfoCmd = &cobra.Command{
+var ipInfoCmd = &cobra.Command{
 	Use:     "ip-info",
 	Aliases: []string{"ip"},
 	Short:   "Display local network interface and public IP information",
@@ -41,5 +41,5 @@ var IPInfoCmd = &cobra.Command{
 }
 
 func init() {
-	IPInfoCmd.Flags().BoolVar(&ipInfoFlags.ipv6, "ipv6", false, "Include IPv6 addresses in the output")
+	ipInfoCmd.Flags().BoolVar(&ipInfoFlags.ipv6, "ipv6", false, "Include IPv6 addresses in the output")
 }

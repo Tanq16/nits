@@ -3,6 +3,7 @@ package interactions
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -20,16 +21,17 @@ func TestExecuteNeo4jQueriesFromFile_EarlyExits(t *testing.T) {
 	tests := []struct {
 		name     string
 		filePath string
+		wantErr  string
 	}{
-		{"missing file", filepath.Join(dir, "does-not-exist.yaml")},
-		{"empty query list", emptyFile},
-		{"malformed yaml", malformedFile},
+		{"missing file", filepath.Join(dir, "does-not-exist.yaml"), "failed to read query file"},
+		{"empty query list", emptyFile, "no queries found"},
+		{"malformed yaml", malformedFile, "failed to parse YAML"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := ExecuteNeo4jQueriesFromFile(t.Context(), "neo4j://localhost:7687", "neo4j", "pass", "neo4j", tt.filePath, false)
-			if err == nil {
-				t.Errorf("ExecuteNeo4jQueriesFromFile(%q) expected error, got nil", tt.filePath)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("ExecuteNeo4jQueriesFromFile(%q) err = %v, want error containing %q", tt.filePath, err, tt.wantErr)
 			}
 		})
 	}

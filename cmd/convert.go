@@ -1,4 +1,4 @@
-package genericsCmd
+package cmd
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	u "github.com/tanq16/nits/utils"
 )
 
-var ConvertCmd = &cobra.Command{
+var convertCmd = &cobra.Command{
 	Use:     "convert [converter] [data or file]",
 	Aliases: []string{"c"},
 	Short:   "Convert data between different formats and encodings",
@@ -46,4 +46,3 @@ Examples:
 		}
 	},
 }
-

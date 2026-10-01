@@ -1,12 +1,5 @@
 testdir
 nits
 nits-*
-internal/generics/static/js/*
-!internal/generics/static/js/.gitkeep
-internal/generics/static/css/*
-!internal/generics/static/css/.gitkeep
-internal/generics/static/fonts/*
-!internal/generics/static/fonts/.gitkeep
 .claude
 .agents
-internal/generics/static/.assets-stamp

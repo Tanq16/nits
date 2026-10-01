@@ -8,9 +8,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	genericsCmd "github.com/tanq16/nits/cmd/generics-cmd"
-	interactionsCmd "github.com/tanq16/nits/cmd/interactions-cmd"
-	networkCmd "github.com/tanq16/nits/cmd/network-cmd"
+	archiveCmd "github.com/tanq16/nits/cmd/archive-cmd"
+	fsSyncCmd "github.com/tanq16/nits/cmd/fs-sync-cmd"
+	timeCmd "github.com/tanq16/nits/cmd/time-cmd"
 	"github.com/tanq16/nits/utils"
 )
 
@@ -24,8 +24,6 @@ var rootCmd = &cobra.Command{
 	CompletionOptions: cobra.CompletionOptions{
 		HiddenDefaultCmd: true,
 	},
-	SilenceErrors: true,
-	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		return utils.ResolveStdin(cmd)
 	},
@@ -33,7 +31,7 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		utils.PrintFatal("Command failed", err)
+		os.Exit(1)
 	}
 }
 
@@ -56,22 +54,24 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Enable debug logging")
 	cobra.OnInitialize(setupLogs)
 
-	rootCmd.AddCommand(networkCmd.DownloadCmd)
-	rootCmd.AddCommand(networkCmd.GitHubReleaseCmd)
-	rootCmd.AddCommand(networkCmd.HTTPServerCmd)
-	rootCmd.AddCommand(networkCmd.IPInfoCmd)
+	rootCmd.AddCommand(downloadCmd)
+	rootCmd.AddCommand(gitHubReleaseCmd)
+	rootCmd.AddCommand(httpServerCmd)
+	rootCmd.AddCommand(ipInfoCmd)
 
-	rootCmd.AddCommand(genericsCmd.ArchiveCmd)
-	rootCmd.AddCommand(genericsCmd.BulkRenameCmd)
-	rootCmd.AddCommand(genericsCmd.DuplicatesCmd)
-	rootCmd.AddCommand(genericsCmd.PassphraseCmd)
-	rootCmd.AddCommand(genericsCmd.UUIDCmd)
-	rootCmd.AddCommand(genericsCmd.RandomCmd)
-	rootCmd.AddCommand(genericsCmd.TimeCmd)
-	rootCmd.AddCommand(genericsCmd.ManualRenameCmd)
-	rootCmd.AddCommand(genericsCmd.ConvertCmd)
-	rootCmd.AddCommand(genericsCmd.MarkdownCmd)
+	rootCmd.AddCommand(archiveCmd.ArchiveCmd)
+	rootCmd.AddCommand(bulkRenameCmd)
+	rootCmd.AddCommand(duplicatesCmd)
+	rootCmd.AddCommand(fileUnzipperCmd)
+	rootCmd.AddCommand(imgDedupeCmd)
+	rootCmd.AddCommand(manualRenameCmd)
 
-	rootCmd.AddCommand(interactionsCmd.FSSyncCmd)
-	rootCmd.AddCommand(interactionsCmd.Neo4jCmd)
+	rootCmd.AddCommand(passphraseCmd)
+	rootCmd.AddCommand(uuidCmd)
+	rootCmd.AddCommand(randomCmd)
+	rootCmd.AddCommand(timeCmd.TimeCmd)
+
+	rootCmd.AddCommand(convertCmd)
+	rootCmd.AddCommand(fsSyncCmd.FSSyncCmd)
+	rootCmd.AddCommand(neo4jCmd)
 }

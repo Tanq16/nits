@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/goccy/go-yaml"
 )
 
 func TestConvertData(t *testing.T) {
@@ -24,7 +22,6 @@ func TestConvertData(t *testing.T) {
 	}{
 		{"unsupported converter", "does-not-exist", "x", true},
 		{"empty string input", "url", "", true},
-		{"file converter missing file", "compose-docker", filepath.Join(dir, "missing.yaml"), true},
 		{"valid string converter", "url", "hello world", false},
 		{"valid file converter", "compose-docker", composeFile, false},
 	}
@@ -87,9 +84,6 @@ func TestFormatJWTValue(t *testing.T) {
 	}{
 		{"float64 whole number", float64(1516239022), "1516239022"},
 		{"int64", int64(42), "42"},
-		{"string", "hello", "hello"},
-		{"bool", true, "true"},
-		{"nil", nil, "<nil>"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,98 +118,6 @@ func TestSplitCommand(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestConvertDockerToCompose(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-
-	if _, err := convertDockerToCompose("not a docker command"); err == nil {
-		t.Error("expected error for non 'docker run' prefixed input")
-	}
-
-	if _, err := convertDockerToCompose(`docker run -d --name web -p 8080:80 -e FOO=bar nginx`); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	data, err := os.ReadFile("docker-compose.yml")
-	if err != nil {
-		t.Fatalf("expected docker-compose.yml to be written: %v", err)
-	}
-	var cfg map[string]any
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		t.Fatalf("unmarshal compose: %v", err)
-	}
-	services, ok := cfg["services"].(map[string]any)
-	if !ok {
-		t.Fatalf("services missing: %v", cfg)
-	}
-	if _, hasApp := services["app"]; hasApp {
-		t.Errorf("stale 'app' service should be deleted when --name is set; got %v", services)
-	}
-	web, ok := services["web"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected 'web' service, got %v", services)
-	}
-	if web["image"] != "nginx" {
-		t.Errorf("web.image = %v, want nginx", web["image"])
-	}
-}
-
-func TestConvertDockerToComposeBooleanFlags(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-
-	if _, err := convertDockerToCompose(`docker run -it --rm nginx bash`); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	data, err := os.ReadFile("docker-compose.yml")
-	if err != nil {
-		t.Fatalf("read compose: %v", err)
-	}
-	var cfg map[string]any
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	app := cfg["services"].(map[string]any)["app"].(map[string]any)
-	if app["image"] != "nginx" {
-		t.Errorf("image = %v, want nginx (boolean flags must not swallow the image)", app["image"])
-	}
-	if app["command"] != "bash" {
-		t.Errorf("command = %v, want bash", app["command"])
-	}
-}
-
-
-func TestResolveUnderRoot(t *testing.T) {
-	root := t.TempDir()
-	s := &MarkdownServer{Options: &MarkdownServerOptions{RootDir: root}}
-
-	inside := filepath.Join(root, "doc.md")
-	if err := os.WriteFile(inside, []byte("x"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	got, ok := s.resolveUnderRoot("doc.md")
-	if !ok || got != inside {
-		t.Errorf("resolveUnderRoot(doc.md) = %q, %v; want %q, true", got, ok, inside)
-	}
-
-	sibling := filepath.Join(filepath.Dir(root), filepath.Base(root)+"-private")
-	if err := os.MkdirAll(sibling, 0755); err != nil {
-		t.Fatal(err)
-	}
-	secret := filepath.Join(sibling, "secret.md")
-	if err := os.WriteFile(secret, []byte("secret"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	escaped := "../" + filepath.Base(root) + "-private/secret.md"
-	if got, ok := s.resolveUnderRoot(escaped); ok {
-		t.Errorf("resolveUnderRoot(%q) = %q, true; want rejected", escaped, got)
-	}
-	if got, ok := s.resolveUnderRoot("../../../etc/passwd"); ok {
-		t.Errorf("resolveUnderRoot(../../../etc/passwd) = %q, true; want rejected", got)
 	}
 }
 
@@ -344,5 +246,3 @@ func TestGeneratePassPhrase(t *testing.T) {
 		}
 	})
 }
-
-

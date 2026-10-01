@@ -1,4 +1,4 @@
-package genericsCmd
+package cmd
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ var duplicatesFlags struct {
 	delete    bool
 }
 
-var DuplicatesCmd = &cobra.Command{
+var duplicatesCmd = &cobra.Command{
 	Use:     "duplicates",
 	Aliases: []string{"dup"},
 	Short:   "Find duplicate files by content with optional recursive search",
@@ -54,6 +54,6 @@ func printDuplicateTable(sets []generics.DuplicateSet, startID int) {
 }
 
 func init() {
-	DuplicatesCmd.Flags().BoolVar(&duplicatesFlags.recursive, "recursive", false, "Search recursively in subdirectories")
-	DuplicatesCmd.Flags().BoolVar(&duplicatesFlags.delete, "delete", false, "Delete duplicate files, keeping only the first copy in each set")
+	duplicatesCmd.Flags().BoolVar(&duplicatesFlags.recursive, "recursive", false, "Search recursively in subdirectories")
+	duplicatesCmd.Flags().BoolVar(&duplicatesFlags.delete, "delete", false, "Delete duplicate files, keeping only the first copy in each set")
 }

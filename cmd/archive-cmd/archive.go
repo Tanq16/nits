@@ -1,4 +1,4 @@
-package genericsCmd
+package archiveCmd
 
 import (
 	"errors"
@@ -46,6 +46,9 @@ var archiveCreateCmd = &cobra.Command{
 			if err != nil {
 				u.PrintFatal("TUI error", err)
 			}
+			if entered == "" {
+				u.PrintFatal("archive create needs a non-empty password", nil)
+			}
 			password = entered
 		}
 		output := archive.OutputPath(archiveFlags.output, encrypt)
@@ -83,6 +86,9 @@ var archiveExtractCmd = &cobra.Command{
 			}
 			if err != nil {
 				u.PrintFatal("TUI error", err)
+			}
+			if entered == "" {
+				u.PrintFatal("archive extract needs a non-empty password", nil)
 			}
 			password = entered
 		}
