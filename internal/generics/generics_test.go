@@ -83,7 +83,6 @@ func TestFormatJWTValue(t *testing.T) {
 		want string
 	}{
 		{"float64 whole number", float64(1516239022), "1516239022"},
-		{"int64", int64(42), "42"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

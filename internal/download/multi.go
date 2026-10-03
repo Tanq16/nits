@@ -73,7 +73,7 @@ func downloadChunk(ctx context.Context, url, outputPath string, ch *chunk, clien
 	tempFileName := filepath.Join(tempDir, fmt.Sprintf("%s.part%d", filepath.Base(outputPath), ch.id))
 	expectedSize := ch.end - ch.start + 1
 
-	reconcile := func() int64 {
+	reconcile := func(report func(io.Writer, int64)) int64 {
 		currentSize := int64(0)
 		if fi, err := os.Stat(tempFileName); err == nil {
 			currentSize = fi.Size()
@@ -83,13 +83,13 @@ func downloadChunk(ctx context.Context, url, outputPath string, ch *chunk, clien
 			currentSize = 0
 		}
 		if delta := currentSize - ch.downloaded; delta != 0 {
-			addProgress(progress, delta)
+			report(progress, delta)
 			ch.downloaded = currentSize
 		}
 		return currentSize
 	}
 
-	resumeOffset := reconcile()
+	resumeOffset := reconcile(resumeProgress)
 	if resumeOffset == expectedSize {
 		mu.Lock()
 		ch.path = tempFileName
@@ -108,14 +108,14 @@ func downloadChunk(ctx context.Context, url, outputPath string, ch *chunk, clien
 				return ctx.Err()
 			case <-timer.C:
 			}
-			resumeOffset = reconcile()
+			resumeOffset = reconcile(addProgress)
 		}
 		if err := writeChunk(ctx, url, ch, client, tempFileName, progress, resumeOffset); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			lastErr = err
-			resumeOffset = reconcile()
+			resumeOffset = reconcile(addProgress)
 			continue
 		}
 		mu.Lock()

@@ -67,13 +67,7 @@ func runGitHubRelease(cmd *cobra.Command, args []string) {
 		u.PrintFatal("failed to fetch release info", err)
 	}
 
-	asset, ok, err := pickAsset(release)
-	if errors.Is(err, u.ErrNoTerminal) {
-		u.PrintFatal("github-release --manual needs a terminal, or pass --asset", nil)
-	}
-	if err != nil {
-		u.PrintFatal("failed to select asset", err)
-	}
+	asset, ok := pickAsset(release)
 	if !ok {
 		return
 	}
@@ -108,23 +102,23 @@ func runGitHubRelease(cmd *cobra.Command, args []string) {
 	m.Done()
 }
 
-func pickAsset(release ghrelease.Release) (ghrelease.Asset, bool, error) {
+func pickAsset(release ghrelease.Release) (ghrelease.Asset, bool) {
 	if len(release.Assets) == 0 {
-		return ghrelease.Asset{}, false, fmt.Errorf("release %s has no assets", release.Tag)
+		u.PrintFatal(fmt.Sprintf("release %s has no assets", release.Tag), nil)
 	}
 	if ghReleaseFlags.asset != "" {
 		asset, ok := ghrelease.FindAsset(release.Assets, ghReleaseFlags.asset)
 		if !ok {
-			return ghrelease.Asset{}, false, fmt.Errorf("no asset matching %q", ghReleaseFlags.asset)
+			u.PrintFatal(fmt.Sprintf("no asset matching %q in release %s", ghReleaseFlags.asset, release.Tag), nil)
 		}
-		return asset, true, nil
+		return asset, true
 	}
 	if !ghReleaseFlags.manual {
 		asset, ok := ghrelease.SelectForPlatform(release.Assets)
 		if !ok {
-			return ghrelease.Asset{}, false, fmt.Errorf("could not automatically select asset for platform %s/%s, use --manual or --asset", runtime.GOOS, runtime.GOARCH)
+			u.PrintFatal(fmt.Sprintf("no asset found for %s/%s, pass --asset or --manual", runtime.GOOS, runtime.GOARCH), nil)
 		}
-		return asset, true, nil
+		return asset, true
 	}
 
 	options := make([]string, len(release.Assets))
@@ -132,13 +126,16 @@ func pickAsset(release ghrelease.Release) (ghrelease.Asset, bool, error) {
 		options[i] = fmt.Sprintf("%s (%s)", asset.Name, formatAssetSize(asset.Size))
 	}
 	idx, err := u.PromptSelect(fmt.Sprintf("Release %s", release.Tag), options)
+	if errors.Is(err, u.ErrNoTerminal) {
+		u.PrintFatal("github-release --manual needs a terminal, or pass --asset", nil)
+	}
 	if err != nil {
-		return ghrelease.Asset{}, false, err
+		u.PrintFatal("TUI error", err)
 	}
 	if idx < 0 {
-		return ghrelease.Asset{}, false, nil
+		return ghrelease.Asset{}, false
 	}
-	return release.Assets[idx], true, nil
+	return release.Assets[idx], true
 }
 
 func formatAssetSize(n int64) string {

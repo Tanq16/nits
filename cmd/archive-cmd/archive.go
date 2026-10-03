@@ -11,11 +11,12 @@ import (
 )
 
 var archiveFlags struct {
-	output  string
-	include []string
-	exclude []string
-	bare    bool
-	encrypt string
+	output   string
+	include  []string
+	exclude  []string
+	bare     bool
+	encrypt  bool
+	password string
 }
 
 var archiveExtractFlags struct {
@@ -36,12 +37,12 @@ var archiveCreateCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		include := compileRegexes(archiveFlags.include, "include")
 		exclude := compileRegexes(archiveFlags.exclude, "exclude")
-		password := archiveFlags.encrypt
-		encrypt := cmd.Flags().Changed("encrypt")
+		password := archiveFlags.password
+		encrypt := archiveFlags.encrypt || password != ""
 		if encrypt && password == "" {
 			entered, err := u.PromptPassword("Password:")
 			if errors.Is(err, u.ErrNoTerminal) {
-				u.PrintFatal("archive create needs --encrypt, or --encrypt -", nil)
+				u.PrintFatal("archive create --encrypt needs --password, or --password -", nil)
 			}
 			if err != nil {
 				u.PrintFatal("TUI error", err)
@@ -122,8 +123,9 @@ func init() {
 	archiveCreateCmd.Flags().StringSliceVar(&archiveFlags.include, "include", nil, "Include only zip paths matching regex (repeatable)")
 	archiveCreateCmd.Flags().StringSliceVar(&archiveFlags.exclude, "exclude", nil, "Exclude zip paths matching regex (repeatable)")
 	archiveCreateCmd.Flags().BoolVar(&archiveFlags.bare, "bare", false, "Store given paths at zip root with no wrapper directory")
-	archiveCreateCmd.Flags().StringVar(&archiveFlags.encrypt, "encrypt", "", "Password to encrypt the zip, or - to read it from stdin")
-	_ = u.MarkStdinLine(archiveCreateCmd, "encrypt")
+	archiveCreateCmd.Flags().BoolVar(&archiveFlags.encrypt, "encrypt", false, "Encrypt the zip, prompting for a password unless --password is given")
+	archiveCreateCmd.Flags().StringVar(&archiveFlags.password, "password", "", "Password to encrypt the zip with (implies --encrypt), or - to read it from stdin")
+	_ = u.MarkStdinLine(archiveCreateCmd, "password")
 
 	archiveExtractCmd.Flags().BoolVar(&archiveExtractFlags.bare, "bare", false, "Strip the first path component when extracting")
 	archiveExtractCmd.Flags().StringVar(&archiveExtractFlags.password, "password", "", "Password for an encrypted archive, or - to read it from stdin")

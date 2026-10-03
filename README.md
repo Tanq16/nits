@@ -52,16 +52,17 @@ All commands support `--debug` for structured debug logging.
 
 ### Files
 
-#### `archive` (aliases: `c`, `e`)
+#### `archive`
 
-Create or extract zip archives with optional regex filters and AES-GCM encryption.
+Create or extract zip archives with optional regex filters and AES-GCM encryption. `create` has the alias `c` and `extract` has the alias `e`.
 
 ```bash
 nits archive create ./src ./docs
 nits archive c ./src -o backup.zip
 nits archive create ./src --include '\.go$' --exclude '_test\.go$'
 nits archive create ./src --bare
-echo pw | nits archive create ./src --encrypt -
+nits archive create ./src --encrypt
+echo pw | nits archive create ./src --password -
 nits archive extract archive.zip.enc --password pw
 nits archive e backup.zip
 nits archive extract backup.zip --bare

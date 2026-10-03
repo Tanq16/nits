@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -21,7 +23,12 @@ Examples:
   nits convert url "Hello World"                # URL encode text
   nits convert urld "Hello%20World"             # URL decode text
   nits convert jwtd "$TOKEN"                    # Decode JWT token`,
-	Args: cobra.ExactArgs(2),
+	Args: cobra.MatchAll(cobra.ExactArgs(2), func(cmd *cobra.Command, args []string) error {
+		if converters := generics.Converters(); !slices.Contains(converters, args[0]) {
+			return fmt.Errorf("unknown converter %q, must be one of %s", args[0], strings.Join(converters, ", "))
+		}
+		return nil
+	}),
 	Run: func(cmd *cobra.Command, args []string) {
 		converterType := args[0]
 		input := args[1]
