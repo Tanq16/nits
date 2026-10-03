@@ -18,17 +18,17 @@ func simple(ctx context.Context, url, outputPath string, client *Client, progres
 	tempOutputPath := filepath.Join(tempDir, filepath.Base(outputPath)) + ".part"
 
 	var reported int64
-	reconcile := func() {
+	reconcile := func(report func(io.Writer, int64)) {
 		currentSize := int64(0)
 		if fi, err := os.Stat(tempOutputPath); err == nil {
 			currentSize = fi.Size()
 		}
 		if delta := currentSize - reported; delta != 0 {
-			addProgress(progress, delta)
+			report(progress, delta)
 			reported = currentSize
 		}
 	}
-	reconcile()
+	reconcile(resumeProgress)
 
 	var lastErr error
 	for retry := range maxRetries {
@@ -45,12 +45,12 @@ func simple(ctx context.Context, url, outputPath string, client *Client, progres
 				return ctx.Err()
 			case <-timer.C:
 			}
-			reconcile()
+			reconcile(addProgress)
 		}
 		err := simpleAttempt(ctx, url, tempOutputPath, client, progress, &reported)
 		if err != nil {
 			lastErr = err
-			reconcile()
+			reconcile(addProgress)
 			continue
 		}
 		if err := os.Rename(tempOutputPath, outputPath); err != nil {

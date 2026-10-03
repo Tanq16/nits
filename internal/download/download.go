@@ -277,6 +277,16 @@ func addProgress(w io.Writer, n int64) {
 	}
 }
 
+func resumeProgress(w io.Writer, n int64) {
+	if w == nil || n == 0 {
+		return
+	}
+	type resumer interface{ Resume(int64) }
+	if r, ok := w.(resumer); ok {
+		r.Resume(n)
+	}
+}
+
 func removeTempDirIfEmpty(dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) > 0 {

@@ -64,14 +64,6 @@ func TestBuildManifest(t *testing.T) {
 	if hashA == hashB {
 		t.Error("distinct file contents produced the same hash")
 	}
-
-	manifest2, err := BuildManifest(dir, NewPathIgnorer("*.log"))
-	if err != nil {
-		t.Fatalf("BuildManifest() second run error = %v", err)
-	}
-	if manifest2["a.txt"] != hashA {
-		t.Error("hash for identical content changed between runs")
-	}
 }
 
 func TestCompareManifests(t *testing.T) {

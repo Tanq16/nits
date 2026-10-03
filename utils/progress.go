@@ -92,6 +92,7 @@ type Meter struct {
 
 	mu      sync.Mutex
 	current int64
+	base    int64
 	start   time.Time
 	window  rateWindow
 	ticker  *time.Ticker
@@ -147,8 +148,21 @@ func (m *Meter) Add(n int64) {
 	if m.current < 0 {
 		m.current = 0
 	}
-	now := time.Now()
-	m.window.add(m.current, now)
+	m.base = min(m.base, m.current)
+	m.window.add(m.current, time.Now())
+}
+
+func (m *Meter) Resume(n int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.settled {
+		return
+	}
+	m.current += n
+	m.base += n
+	for i := range m.window.samples {
+		m.window.samples[i].val += n
+	}
 }
 
 func (m *Meter) Done() {
@@ -160,11 +174,12 @@ func (m *Meter) Done() {
 	m.finishLocked()
 	elapsed := time.Since(m.start)
 	cur := m.current
+	avg := m.average(elapsed, false)
 	name := m.name
 	unit := m.unit
 	m.mu.Unlock()
 
-	line := settledLine(name, cur, elapsed, unit)
+	line := settledLine(name, cur, elapsed, avg, unit)
 	PrintSuccess(line)
 }
 
@@ -223,6 +238,7 @@ func (m *Meter) loop() {
 }
 
 func (m *Meter) tickLocked() {
+	m.window.add(m.current, time.Now())
 	if m.live() {
 		m.draw(m.frame())
 		return
@@ -379,18 +395,19 @@ func (m *Meter) debugTick() {
 }
 
 func (m *Meter) average(elapsed time.Duration, live bool) float64 {
-	if elapsed <= 0 || m.current <= 0 {
+	moved := m.current - m.base
+	if elapsed <= 0 || moved <= 0 {
 		return 0
 	}
 	if live && elapsed < rateFloor {
 		return 0
 	}
-	return float64(m.current) / elapsed.Seconds()
+	return float64(moved) / elapsed.Seconds()
 }
 
-func settledLine(name string, amount int64, elapsed time.Duration, unit Unit) string {
+func settledLine(name string, amount int64, elapsed time.Duration, avg float64, unit Unit) string {
 	name = clip(name, max(termWidth()-40, 8))
-	parts := []string{name, formatScalar(amount, unit), formatElapsed(elapsed), "avg " + formatRate(float64(amount)/max(elapsed.Seconds(), 0.0001), unit)}
+	parts := []string{name, formatScalar(amount, unit), formatElapsed(elapsed), "avg " + formatRate(avg, unit)}
 	if amount <= 0 {
 		parts = []string{name, formatElapsed(elapsed)}
 	}

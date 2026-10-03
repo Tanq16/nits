@@ -66,8 +66,7 @@ var manualRenameCmd = &cobra.Command{
 					if errors.Is(err, u.ErrNoTerminal) {
 						u.PrintFatal("manual-rename requires an interactive terminal", nil)
 					}
-					u.PrintIndentedWarn(fmt.Sprintf("%s → (skipped)", oldName), nil)
-					continue
+					u.PrintFatal("TUI error", err)
 				}
 			}
 			if strings.TrimSpace(input) == "" || strings.TrimSpace(input) == oldName {

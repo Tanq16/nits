@@ -2,7 +2,9 @@ package generics
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 )
 
 type TableData struct {
@@ -43,6 +45,10 @@ var supportedConverters = map[string]converterInfo{
 		InputType: "string",
 		Handler:   jwtDecode,
 	},
+}
+
+func Converters() []string {
+	return slices.Sorted(maps.Keys(supportedConverters))
 }
 
 func ConvertData(converterType string, input string) (*ConvertResult, error) {
