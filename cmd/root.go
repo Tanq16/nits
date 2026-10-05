@@ -64,7 +64,6 @@ func init() {
 	rootCmd.AddCommand(duplicatesCmd)
 	rootCmd.AddCommand(fileUnzipperCmd)
 	rootCmd.AddCommand(imgDedupeCmd)
-	rootCmd.AddCommand(manualRenameCmd)
 
 	rootCmd.AddCommand(passphraseCmd)
 	rootCmd.AddCommand(uuidCmd)

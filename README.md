@@ -16,7 +16,7 @@ Anbu is the self-hosted IT hub for secrets, machines, and SSH, and nits is the l
 
 | Category | Commands | Description |
 |---|---|---|
-| Files | `archive`, `rename`, `duplicates`, `file-unzipper`, `manual-rename` | Archives, regex bulk rename, file duplicates, zip flattening, interactive rename |
+| Files | `archive`, `rename`, `duplicates`, `file-unzipper` | Archives, regex bulk rename, file duplicates, zip flattening |
 | Images | `img-dedup` | Duplicate image detection via perceptual hashing |
 | Network | `download`, `github-release`, `http-server`, `ip-info`, `fs-sync` | HTTP downloads, GitHub release asset fetching, local file serving, IP lookup, bidirectional sync |
 | Generators | `uuid`, `random-string`, `passphrase`, `time` | UUIDs, random strings, Diceware passphrases, and timestamp parsing and diffs |
@@ -98,18 +98,6 @@ Unzip all zip files in CWD, creating a directory for each and flattening single 
 ```bash
 nits file-unzipper
 nits file-unzipper --uuid-names
-```
-
-#### `manual-rename` (alias: `mrename`)
-
-Interactively rename files and directories one by one. `--names-file` supplies the new names instead, one per line in listing order, where a blank line skips that item.
-
-```bash
-nits manual-rename
-nits mrename --include-dir
-nits mrename --hidden
-nits mrename --include-extension
-nits mrename --names-file ../names.txt
 ```
 
 ### Images

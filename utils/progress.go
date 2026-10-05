@@ -247,9 +247,7 @@ func (m *Meter) tickLocked() {
 		m.debugTick()
 		return
 	}
-	if m.current > 0 {
-		lipgloss.Println(m.pipedLine())
-	}
+	lipgloss.Println(m.pipedLine())
 }
 
 func (m *Meter) draw(lines []string) {

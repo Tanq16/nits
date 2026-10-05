@@ -120,8 +120,8 @@ func compileRegexes(pats []string, flagName string) []*regexp.Regexp {
 
 func init() {
 	archiveCreateCmd.Flags().StringVarP(&archiveFlags.output, "output", "o", "archive.zip", "Output zip path")
-	archiveCreateCmd.Flags().StringSliceVar(&archiveFlags.include, "include", nil, "Include only zip paths matching regex (repeatable)")
-	archiveCreateCmd.Flags().StringSliceVar(&archiveFlags.exclude, "exclude", nil, "Exclude zip paths matching regex (repeatable)")
+	archiveCreateCmd.Flags().StringArrayVar(&archiveFlags.include, "include", nil, "Include only zip paths matching regex (repeatable)")
+	archiveCreateCmd.Flags().StringArrayVar(&archiveFlags.exclude, "exclude", nil, "Exclude zip paths matching regex (repeatable)")
 	archiveCreateCmd.Flags().BoolVar(&archiveFlags.bare, "bare", false, "Store given paths at zip root with no wrapper directory")
 	archiveCreateCmd.Flags().BoolVar(&archiveFlags.encrypt, "encrypt", false, "Encrypt the zip, prompting for a password unless --password is given")
 	archiveCreateCmd.Flags().StringVar(&archiveFlags.password, "password", "", "Password to encrypt the zip with (implies --encrypt), or - to read it from stdin")
