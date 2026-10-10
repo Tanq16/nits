@@ -24,9 +24,14 @@ var archiveExtractFlags struct {
 	password string
 }
 
+var archiveUnrarFlags struct {
+	bare     bool
+	password string
+}
+
 var ArchiveCmd = &cobra.Command{
 	Use:   "archive",
-	Short: "Create or extract zip archives",
+	Short: "Create or extract zip archives, and extract rar archives",
 }
 
 var archiveCreateCmd = &cobra.Command{
@@ -40,17 +45,7 @@ var archiveCreateCmd = &cobra.Command{
 		password := archiveFlags.password
 		encrypt := archiveFlags.encrypt || password != ""
 		if encrypt && password == "" {
-			entered, err := u.PromptPassword("Password:")
-			if errors.Is(err, u.ErrNoTerminal) {
-				u.PrintFatal("archive create --encrypt needs --password, or --password -", nil)
-			}
-			if err != nil {
-				u.PrintFatal("TUI error", err)
-			}
-			if entered == "" {
-				u.PrintFatal("archive create needs a non-empty password", nil)
-			}
-			password = entered
+			password = promptPassword("archive create --encrypt needs --password, or --password -", "archive create needs a non-empty password")
 		}
 		output := archive.OutputPath(archiveFlags.output, encrypt)
 		cfg := archive.CreateConfig{
@@ -81,17 +76,7 @@ var archiveExtractCmd = &cobra.Command{
 		}
 		password := archiveExtractFlags.password
 		if encrypted && password == "" {
-			entered, err := u.PromptPassword("Password:")
-			if errors.Is(err, u.ErrNoTerminal) {
-				u.PrintFatal("archive extract needs --password, or --password -", nil)
-			}
-			if err != nil {
-				u.PrintFatal("TUI error", err)
-			}
-			if entered == "" {
-				u.PrintFatal("archive extract needs a non-empty password", nil)
-			}
-			password = entered
+			password = promptPassword("archive extract needs --password, or --password -", "archive extract needs a non-empty password")
 		}
 		cfg := archive.ExtractConfig{
 			Archive:  args[0],
@@ -104,6 +89,48 @@ var archiveExtractCmd = &cobra.Command{
 		}
 		u.PrintSuccess("extracted")
 	},
+}
+
+var archiveUnrarCmd = &cobra.Command{
+	Use:   "unrar <file>",
+	Short: "Extract a rar archive, reading later volumes of a multi-volume set automatically",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		password := archiveUnrarFlags.password
+		if password == "" {
+			encrypted, err := archive.IsRarEncrypted(args[0])
+			if err != nil {
+				u.PrintFatal("failed to read archive", err)
+			}
+			if encrypted {
+				password = promptPassword("archive unrar needs --password, or --password -", "archive unrar needs a non-empty password")
+			}
+		}
+		cfg := archive.ExtractConfig{
+			Archive:  args[0],
+			Dest:     ".",
+			Bare:     archiveUnrarFlags.bare,
+			Password: password,
+		}
+		if err := archive.Unrar(cfg); err != nil {
+			u.PrintFatal("failed to extract archive", err)
+		}
+		u.PrintSuccess("extracted")
+	},
+}
+
+func promptPassword(noTerminalMsg, emptyMsg string) string {
+	entered, err := u.PromptPassword("Password:")
+	if errors.Is(err, u.ErrNoTerminal) {
+		u.PrintFatal(noTerminalMsg, nil)
+	}
+	if err != nil {
+		u.PrintFatal("TUI error", err)
+	}
+	if entered == "" {
+		u.PrintFatal(emptyMsg, nil)
+	}
+	return entered
 }
 
 func compileRegexes(pats []string, flagName string) []*regexp.Regexp {
@@ -131,6 +158,11 @@ func init() {
 	archiveExtractCmd.Flags().StringVar(&archiveExtractFlags.password, "password", "", "Password for an encrypted archive, or - to read it from stdin")
 	_ = u.MarkStdinLine(archiveExtractCmd, "password")
 
+	archiveUnrarCmd.Flags().BoolVar(&archiveUnrarFlags.bare, "bare", false, "Strip the first path component when extracting")
+	archiveUnrarCmd.Flags().StringVar(&archiveUnrarFlags.password, "password", "", "Password for an encrypted archive, or - to read it from stdin")
+	_ = u.MarkStdinLine(archiveUnrarCmd, "password")
+
 	ArchiveCmd.AddCommand(archiveCreateCmd)
 	ArchiveCmd.AddCommand(archiveExtractCmd)
+	ArchiveCmd.AddCommand(archiveUnrarCmd)
 }

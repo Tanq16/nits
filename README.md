@@ -54,7 +54,7 @@ All commands support `--debug` for structured debug logging.
 
 #### `archive`
 
-Create or extract zip archives with optional regex filters and AES-GCM encryption. `create` has the alias `c` and `extract` has the alias `e`.
+Create or extract zip archives with optional regex filters and AES-GCM encryption. `create` has the alias `c` and `extract` has the alias `e`. `unrar` extracts rar archives, including encrypted ones. For a multi-volume set, pass the first volume.
 
 ```bash
 nits archive create ./src ./docs
@@ -66,6 +66,8 @@ echo pw | nits archive create ./src --password -
 nits archive extract archive.zip.enc --password pw
 nits archive e backup.zip
 nits archive extract backup.zip --bare
+nits archive unrar movie.part1.rar
+echo pw | nits archive unrar secret.rar --password -
 ```
 
 #### `rename`

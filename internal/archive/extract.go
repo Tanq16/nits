@@ -29,12 +29,8 @@ func IsEncrypted(path string) (bool, error) {
 }
 
 func Extract(cfg ExtractConfig) error {
-	destDir, err := filepath.Abs(cfg.Dest)
+	destDir, err := prepareDest(cfg.Dest)
 	if err != nil {
-		return err
-	}
-	destDir = filepath.Clean(destDir)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return err
 	}
 	encrypted, err := IsEncrypted(cfg.Archive)
@@ -95,29 +91,52 @@ func extractOne(f *zip.File, destDir string, bare bool) error {
 	if mode&os.ModeSymlink != 0 {
 		return nil
 	}
-	name := f.Name
-	if bare {
-		stripped, ok := stripFirst(name)
-		if !ok {
-			return nil
-		}
-		name = stripped
-	}
-	target, err := safeExtractPath(destDir, name)
-	if err != nil {
+	target, ok, err := entryTarget(destDir, f.Name, bare)
+	if !ok {
 		return err
 	}
 	info := f.FileInfo()
-	if info.IsDir() || strings.HasSuffix(name, "/") {
+	if info.IsDir() || strings.HasSuffix(f.Name, "/") {
 		return os.MkdirAll(target, 0755)
 	}
 	if !info.Mode().IsRegular() && !mode.IsRegular() {
 		return nil
 	}
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	return errors.Join(writeEntry(target, info.Mode().Perm(), rc), rc.Close())
+}
+
+func prepareDest(dest string) (string, error) {
+	destDir, err := filepath.Abs(dest)
+	if err != nil {
+		return "", err
+	}
+	destDir = filepath.Clean(destDir)
+	return destDir, os.MkdirAll(destDir, 0755)
+}
+
+func entryTarget(destDir, name string, bare bool) (string, bool, error) {
+	if bare {
+		stripped, ok := stripFirst(name)
+		if !ok {
+			return "", false, nil
+		}
+		name = stripped
+	}
+	target, err := safeExtractPath(destDir, name)
+	if err != nil {
+		return "", false, err
+	}
+	return target, true, nil
+}
+
+func writeEntry(target string, perm os.FileMode, src io.Reader) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		return err
 	}
-	perm := info.Mode().Perm()
 	if perm == 0 {
 		perm = 0644
 	}
@@ -125,17 +144,8 @@ func extractOne(f *zip.File, destDir string, bare bool) error {
 	if err != nil {
 		return err
 	}
-	rc, err := f.Open()
-	if err != nil {
-		out.Close()
-		return err
-	}
-	_, copyErr := io.Copy(out, rc)
-	closeErr := errors.Join(out.Close(), rc.Close())
-	if copyErr != nil {
-		return copyErr
-	}
-	return closeErr
+	_, err = io.Copy(out, src)
+	return errors.Join(err, out.Close())
 }
 
 func stripFirst(name string) (string, bool) {

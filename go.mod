@@ -10,6 +10,7 @@ require (
 	github.com/corona10/goimagehash v1.1.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/neo4j/neo4j-go-driver/v6 v6.3.0
+	github.com/nwaples/rardecode/v2 v2.4.2
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
