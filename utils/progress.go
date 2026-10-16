@@ -18,6 +18,13 @@ type Unit string
 
 const UnitBytes Unit = ""
 
+type FieldSet int
+
+const (
+	FieldsFull FieldSet = iota
+	FieldsLean
+)
+
 const (
 	minBarWidth        = 8
 	maxBarWidth        = 30
@@ -89,6 +96,7 @@ type Meter struct {
 	context string
 	total   int64
 	unit    Unit
+	set     FieldSet
 
 	mu      sync.Mutex
 	current int64
@@ -131,6 +139,15 @@ func (m *Meter) Context(s string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.context = s
+}
+
+func (m *Meter) Fields(set FieldSet) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.set = set
+	if m.live() && !m.settled {
+		m.draw(m.frame())
+	}
 }
 
 func (m *Meter) Write(p []byte) (int, error) {
@@ -303,9 +320,13 @@ func (m *Meter) fields() (fixed, optionals []meterField) {
 	}
 	fixed = append(fixed, meterField{formatPair(m.current, m.total, m.unit), reserveTransferred})
 	avg := m.average(time.Since(m.start), true)
+	eta := meterField{formatETA(m.total, m.current, avg), reserveETA}
+	if m.set == FieldsLean {
+		return fixed, []meterField{eta}
+	}
 	optionals = []meterField{
 		{formatRate(m.window.current(), m.unit), reserveRate},
-		{formatETA(m.total, m.current, avg), reserveETA},
+		eta,
 		{"avg " + formatRate(avg, m.unit), reserveAvg},
 	}
 	return fixed, optionals

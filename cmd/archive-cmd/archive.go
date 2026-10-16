@@ -2,7 +2,8 @@ package archiveCmd
 
 import (
 	"errors"
-	"fmt"
+	"io"
+	"path/filepath"
 	"regexp"
 
 	"github.com/spf13/cobra"
@@ -57,10 +58,11 @@ var archiveCreateCmd = &cobra.Command{
 			Encrypt:  encrypt,
 			Password: password,
 		}
-		if err := archive.Create(cfg); err != nil {
+		plan, err := archive.PrepareCreate(cfg)
+		if err != nil {
 			u.PrintFatal("failed to create archive", err)
 		}
-		u.PrintSuccess(fmt.Sprintf("created %s", output))
+		runWithMeter("Archiving", filepath.Base(output), plan.Size, "failed to create archive", plan.Execute)
 	},
 }
 
@@ -84,10 +86,18 @@ var archiveExtractCmd = &cobra.Command{
 			Bare:     archiveExtractFlags.bare,
 			Password: password,
 		}
-		if err := archive.Extract(cfg); err != nil {
+		name := filepath.Base(args[0])
+		if encrypted {
+			u.PrintRunning("decrypting " + name)
+		}
+		plan, err := archive.PrepareExtract(cfg)
+		if encrypted {
+			u.ClearLines(1)
+		}
+		if err != nil {
 			u.PrintFatal("failed to extract archive", err)
 		}
-		u.PrintSuccess("extracted")
+		runWithMeter("Extracting", name, plan.Size, "failed to extract archive", plan.Execute)
 	},
 }
 
@@ -117,6 +127,16 @@ var archiveUnrarCmd = &cobra.Command{
 		}
 		u.PrintSuccess("extracted")
 	},
+}
+
+func runWithMeter(verb, name string, size int64, failMsg string, run func(io.Writer) error) {
+	m := u.NewMeter(verb, name, size, u.UnitBytes)
+	m.Fields(u.FieldsLean)
+	if err := run(m); err != nil {
+		m.Fail(err)
+		u.PrintFatal(failMsg, err)
+	}
+	m.Done()
 }
 
 func promptPassword(noTerminalMsg, emptyMsg string) string {

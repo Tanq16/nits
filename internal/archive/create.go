@@ -25,14 +25,31 @@ func OutputPath(path string, encrypt bool) string {
 	return path
 }
 
-func Create(cfg CreateConfig) error {
+type CreatePlan struct {
+	Size    int64
+	cfg     CreateConfig
+	entries []zipEntry
+}
+
+func PrepareCreate(cfg CreateConfig) (*CreatePlan, error) {
 	entries, err := collect(cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(entries) == 0 {
-		return fmt.Errorf("no files to archive")
+		return nil, fmt.Errorf("no files to archive")
 	}
+	plan := &CreatePlan{cfg: cfg, entries: entries}
+	for _, e := range entries {
+		if !e.info.IsDir() {
+			plan.Size += e.info.Size()
+		}
+	}
+	return plan, nil
+}
+
+func (p *CreatePlan) Execute(progress io.Writer) error {
+	cfg := p.cfg
 	if dir := filepath.Dir(cfg.Output); dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return err
@@ -52,7 +69,7 @@ func Create(cfg CreateConfig) error {
 		}
 		dest = enc
 	}
-	err = writeZip(dest, entries)
+	err = writeZip(dest, p.entries, progress)
 	var encErr error
 	if enc != nil {
 		encErr = enc.Close()
@@ -173,10 +190,10 @@ func collectArg(arg, wrapper, outAbs string, include, exclude []*regexp.Regexp) 
 	return entries, err
 }
 
-func writeZip(w io.Writer, entries []zipEntry) error {
+func writeZip(w io.Writer, entries []zipEntry, progress io.Writer) error {
 	zw := zip.NewWriter(w)
 	for _, e := range entries {
-		if err := addEntry(zw, e); err != nil {
+		if err := addEntry(zw, e, progress); err != nil {
 			zw.Close()
 			return err
 		}
@@ -184,7 +201,7 @@ func writeZip(w io.Writer, entries []zipEntry) error {
 	return zw.Close()
 }
 
-func addEntry(zw *zip.Writer, e zipEntry) error {
+func addEntry(zw *zip.Writer, e zipEntry, progress io.Writer) error {
 	header, err := zip.FileInfoHeader(e.info)
 	if err != nil {
 		return err
@@ -204,7 +221,7 @@ func addEntry(zw *zip.Writer, e zipEntry) error {
 		return err
 	}
 	defer f.Close()
-	_, err = io.Copy(hw, f)
+	_, err = io.Copy(hw, io.TeeReader(f, progress))
 	return err
 }
 
