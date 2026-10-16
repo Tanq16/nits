@@ -299,10 +299,11 @@ func (m *Meter) headerLine(width int) string {
 	if ctx != "" {
 		ctxPart = " " + ctx
 	}
-	if displayLen(name)+displayLen(ctxPart) > rest {
+	limit := min(rest, nameBudget(width))
+	if displayLen(name) > limit || displayLen(name)+displayLen(ctxPart) > rest {
 		ctxPart = ""
 	}
-	name = clip(name, rest-displayLen(ctxPart))
+	name = clip(name, limit)
 	line := infoStyle.Render(glyph+prefix+name) + mutedText.Render(ctxPart)
 	return line
 }
@@ -425,12 +426,16 @@ func (m *Meter) average(elapsed time.Duration, live bool) float64 {
 }
 
 func settledLine(name string, amount int64, elapsed time.Duration, avg float64, unit Unit) string {
-	name = clip(name, max(termWidth()-40, 8))
+	name = clip(name, nameBudget(termWidth()))
 	parts := []string{name, formatScalar(amount, unit), formatElapsed(elapsed), "avg " + formatRate(avg, unit)}
 	if amount <= 0 {
 		parts = []string{name, formatElapsed(elapsed)}
 	}
 	return strings.Join(parts, "  ")
+}
+
+func nameBudget(width int) int {
+	return max(width-40, 8)
 }
 
 func ClearLines(n int) {
