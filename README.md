@@ -18,7 +18,7 @@ Anbu is the self-hosted IT hub for secrets, machines, and SSH, and nits is the l
 |---|---|---|
 | Files | `archive`, `rename`, `duplicates`, `file-unzipper` | Archives, regex bulk rename, file duplicates, zip flattening |
 | Images | `img-dedup` | Duplicate image detection via perceptual hashing |
-| Network | `download`, `github-release`, `http-server`, `ip-info`, `fs-sync` | HTTP downloads, GitHub release asset fetching, local file serving, IP lookup, bidirectional sync |
+| Network | `download`, `github-release`, `http-server`, `ip-info` | HTTP downloads, GitHub release asset fetching, local file serving, IP lookup |
 | Generators | `uuid`, `random-string`, `passphrase`, `time` | UUIDs, random strings, Diceware passphrases, and timestamp parsing and diffs |
 | Data | `convert`, `neo4j` | Format conversions and Neo4j Cypher queries |
 
@@ -157,15 +157,6 @@ Display local network interfaces and public IP details.
 ```bash
 nits ip-info
 nits ip-info --ipv6
-```
-
-#### `fs-sync`
-
-Bidirectional file synchronization over HTTP or HTTPS.
-
-```bash
-nits fs-sync serve --mode send -p 8080 -d ./data
-nits fs-sync client http://localhost:8080 -d ./backup
 ```
 
 ### Generators
