@@ -86,16 +86,13 @@ var archiveExtractCmd = &cobra.Command{
 			Bare:     archiveExtractFlags.bare,
 			Password: password,
 		}
-		name := filepath.Base(args[0])
-		if encrypted {
-			u.PrintRunning("decrypting " + name)
-		}
 		plan, err := archive.PrepareExtract(cfg)
-		if encrypted {
-			u.ClearLines(1)
-		}
 		if err != nil {
 			u.PrintFatal("failed to extract archive", err)
+		}
+		name := filepath.Base(args[0])
+		if encrypted {
+			runWithMeter("Decrypting", name, plan.ArchiveSize, "failed to decrypt archive", plan.Decrypt)
 		}
 		runWithMeter("Extracting", name, plan.Size, "failed to extract archive", plan.Execute)
 	},
