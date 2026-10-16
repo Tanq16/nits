@@ -47,13 +47,6 @@ func (s *HTTPServer) Run() error {
 	return s.Server.ListenAndServe()
 }
 
-func (s *HTTPServer) Stop() error {
-	if s.Server != nil {
-		return s.Server.Close()
-	}
-	return nil
-}
-
 func (s *HTTPServer) withHTTPLogging(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.Options.OnRequest != nil {

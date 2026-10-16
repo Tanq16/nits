@@ -9,7 +9,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	archiveCmd "github.com/tanq16/nits/cmd/archive-cmd"
-	fsSyncCmd "github.com/tanq16/nits/cmd/fs-sync-cmd"
 	timeCmd "github.com/tanq16/nits/cmd/time-cmd"
 	"github.com/tanq16/nits/utils"
 )
@@ -71,6 +70,5 @@ func init() {
 	rootCmd.AddCommand(timeCmd.TimeCmd)
 
 	rootCmd.AddCommand(convertCmd)
-	rootCmd.AddCommand(fsSyncCmd.FSSyncCmd)
 	rootCmd.AddCommand(neo4jCmd)
 }
