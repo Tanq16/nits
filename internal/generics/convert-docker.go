@@ -185,7 +185,6 @@ func convertComposeToDocker(inputFile string) (*ConvertResult, error) {
 	return &ConvertResult{Commands: dockerCommands}, nil
 }
 
-
 func splitCommand(command string) []string {
 	var parts []string
 	var inQuote bool

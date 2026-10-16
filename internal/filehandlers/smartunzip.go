@@ -116,7 +116,6 @@ func extractZip(zipPath, destDir string) error {
 	return nil
 }
 
-
 func generateUUID() string {
 	return uuid.New().String()
 }

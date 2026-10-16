@@ -82,4 +82,3 @@ func jwtDecodeSegment(seg string) (map[string]any, error) {
 	}
 	return result, nil
 }
-
