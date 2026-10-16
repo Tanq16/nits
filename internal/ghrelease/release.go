@@ -80,9 +80,6 @@ func Latest(ctx context.Context, owner, repo string, client *download.Client) (R
 	if err := json.UnmarshalRead(resp.Body, &payload); err != nil {
 		return Release{}, fmt.Errorf("error decoding API response: %w", err)
 	}
-	if len(payload.Assets) == 0 {
-		return Release{}, fmt.Errorf("no assets found in the release")
-	}
 	assets := make([]Asset, 0, len(payload.Assets))
 	for _, a := range payload.Assets {
 		assets = append(assets, Asset{Name: a.Name, Size: a.Size, URL: a.BrowserDownloadURL})
