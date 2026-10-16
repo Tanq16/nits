@@ -28,65 +28,87 @@ func IsEncrypted(path string) (bool, error) {
 	return bytes.Equal(magic, archiveMagic), nil
 }
 
-func Extract(cfg ExtractConfig) error {
+type ExtractPlan struct {
+	Size    int64
+	reader  *zip.ReadCloser
+	tmp     string
+	destDir string
+	bare    bool
+}
+
+func PrepareExtract(cfg ExtractConfig) (*ExtractPlan, error) {
 	destDir, err := prepareDest(cfg.Dest)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	encrypted, err := IsEncrypted(cfg.Archive)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	path, tmp := cfg.Archive, ""
 	if encrypted {
-		if cfg.Password == "" {
-			return fmt.Errorf("password required")
-		}
-		src, err := os.Open(cfg.Archive)
+		tmp, err = decryptToTemp(cfg.Archive, cfg.Password)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		tmp, err := os.CreateTemp("", "nits-archive-*.zip")
-		if err != nil {
-			src.Close()
-			return err
-		}
-		tmpName := tmp.Name()
-		err = decryptTo(tmp, src, cfg.Password)
-		closeErr := errors.Join(src.Close(), tmp.Close())
-		if err != nil {
-			os.Remove(tmpName)
-			return err
-		}
-		if closeErr != nil {
-			os.Remove(tmpName)
-			return closeErr
-		}
-		defer os.Remove(tmpName)
-		r, err := zip.OpenReader(tmpName)
-		if err != nil {
-			return err
-		}
-		defer r.Close()
-		return extractFiles(r.File, destDir, cfg.Bare)
+		path = tmp
 	}
-	r, err := zip.OpenReader(cfg.Archive)
+	r, err := zip.OpenReader(path)
 	if err != nil {
-		return err
+		if tmp != "" {
+			os.Remove(tmp)
+		}
+		return nil, err
 	}
-	defer r.Close()
-	return extractFiles(r.File, destDir, cfg.Bare)
+	plan := &ExtractPlan{reader: r, tmp: tmp, destDir: destDir, bare: cfg.Bare}
+	for _, f := range r.File {
+		if !f.Mode().IsRegular() {
+			continue
+		}
+		if _, ok := stripFirst(f.Name); cfg.Bare && !ok {
+			continue
+		}
+		plan.Size += int64(f.UncompressedSize64)
+	}
+	return plan, nil
 }
 
-func extractFiles(files []*zip.File, destDir string, bare bool) error {
-	for _, f := range files {
-		if err := extractOne(f, destDir, bare); err != nil {
+func (p *ExtractPlan) Execute(progress io.Writer) error {
+	defer func() {
+		p.reader.Close()
+		if p.tmp != "" {
+			os.Remove(p.tmp)
+		}
+	}()
+	for _, f := range p.reader.File {
+		if err := extractOne(f, p.destDir, p.bare, progress); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func extractOne(f *zip.File, destDir string, bare bool) error {
+func decryptToTemp(path, password string) (string, error) {
+	if password == "" {
+		return "", fmt.Errorf("password required")
+	}
+	src, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp("", "nits-archive-*.zip")
+	if err != nil {
+		src.Close()
+		return "", err
+	}
+	if err := errors.Join(decryptTo(tmp, src, password), src.Close(), tmp.Close()); err != nil {
+		os.Remove(tmp.Name())
+		return "", err
+	}
+	return tmp.Name(), nil
+}
+
+func extractOne(f *zip.File, destDir string, bare bool, progress io.Writer) error {
 	mode := f.Mode()
 	if mode&os.ModeSymlink != 0 {
 		return nil
@@ -106,7 +128,7 @@ func extractOne(f *zip.File, destDir string, bare bool) error {
 	if err != nil {
 		return err
 	}
-	return errors.Join(writeEntry(target, info.Mode().Perm(), rc), rc.Close())
+	return errors.Join(writeEntry(target, info.Mode().Perm(), io.TeeReader(rc, progress)), rc.Close())
 }
 
 func prepareDest(dest string) (string, error) {

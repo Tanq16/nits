@@ -68,4 +68,3 @@ func ConvertData(converterType string, input string) (*ConvertResult, error) {
 	}
 	return converter.Handler(input)
 }
-
