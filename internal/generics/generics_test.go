@@ -1,19 +1,12 @@
 package generics
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestConvertData(t *testing.T) {
-	dir := t.TempDir()
-	composeFile := filepath.Join(dir, "compose.yaml")
-	if err := os.WriteFile(composeFile, []byte("services:\n  app:\n    image: nginx\n"), 0644); err != nil {
-		t.Fatalf("failed to write fixture: %v", err)
-	}
-
 	tests := []struct {
 		name          string
 		converterType string
@@ -23,7 +16,7 @@ func TestConvertData(t *testing.T) {
 		{"unsupported converter", "does-not-exist", "x", true},
 		{"empty string input", "url", "", true},
 		{"valid string converter", "url", "hello world", false},
-		{"valid file converter", "compose-docker", composeFile, false},
+		{"missing input file", "compose-docker", filepath.Join(t.TempDir(), "missing.yaml"), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -29,11 +29,14 @@ func IsEncrypted(path string) (bool, error) {
 }
 
 type ExtractPlan struct {
-	Size    int64
-	reader  *zip.ReadCloser
-	tmp     string
-	destDir string
-	bare    bool
+	Size        int64
+	ArchiveSize int64
+	reader      *zip.ReadCloser
+	archive     string
+	password    string
+	tmp         string
+	destDir     string
+	bare        bool
 }
 
 func PrepareExtract(cfg ExtractConfig) (*ExtractPlan, error) {
@@ -45,32 +48,46 @@ func PrepareExtract(cfg ExtractConfig) (*ExtractPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	path, tmp := cfg.Archive, ""
-	if encrypted {
-		tmp, err = decryptToTemp(cfg.Archive, cfg.Password)
-		if err != nil {
-			return nil, err
-		}
-		path = tmp
-	}
-	r, err := zip.OpenReader(path)
+	info, err := os.Stat(cfg.Archive)
 	if err != nil {
-		if tmp != "" {
-			os.Remove(tmp)
-		}
 		return nil, err
 	}
-	plan := &ExtractPlan{reader: r, tmp: tmp, destDir: destDir, bare: cfg.Bare}
+	plan := &ExtractPlan{ArchiveSize: info.Size(), archive: cfg.Archive, password: cfg.Password, destDir: destDir, bare: cfg.Bare}
+	if encrypted {
+		return plan, nil
+	}
+	return plan, plan.open(cfg.Archive)
+}
+
+func (p *ExtractPlan) Decrypt(progress io.Writer) error {
+	tmp, err := decryptToTemp(p.archive, p.password, progress)
+	if err != nil {
+		return err
+	}
+	p.tmp = tmp
+	if err := p.open(tmp); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+func (p *ExtractPlan) open(path string) error {
+	r, err := zip.OpenReader(path)
+	if err != nil {
+		return err
+	}
+	p.reader = r
 	for _, f := range r.File {
 		if !f.Mode().IsRegular() {
 			continue
 		}
-		if _, ok := stripFirst(f.Name); cfg.Bare && !ok {
+		if _, ok := stripFirst(f.Name); p.bare && !ok {
 			continue
 		}
-		plan.Size += int64(f.UncompressedSize64)
+		p.Size += int64(f.UncompressedSize64)
 	}
-	return plan, nil
+	return nil
 }
 
 func (p *ExtractPlan) Execute(progress io.Writer) error {
@@ -88,7 +105,7 @@ func (p *ExtractPlan) Execute(progress io.Writer) error {
 	return nil
 }
 
-func decryptToTemp(path, password string) (string, error) {
+func decryptToTemp(path, password string, progress io.Writer) (string, error) {
 	if password == "" {
 		return "", fmt.Errorf("password required")
 	}
@@ -101,7 +118,7 @@ func decryptToTemp(path, password string) (string, error) {
 		src.Close()
 		return "", err
 	}
-	if err := errors.Join(decryptTo(tmp, src, password), src.Close(), tmp.Close()); err != nil {
+	if err := errors.Join(decryptTo(tmp, io.TeeReader(src, progress), password), src.Close(), tmp.Close()); err != nil {
 		os.Remove(tmp.Name())
 		return "", err
 	}
