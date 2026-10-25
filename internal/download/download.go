@@ -2,6 +2,8 @@ package download
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -13,15 +15,22 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
-	minMultiChunk = 1 * 1024 * 1024
-	maxRetries    = 5
-	tempDirName   = ".nits-temp"
+	minChunkSize = 1 * 1024 * 1024
+	maxFailures  = 5
+	stallTimeout = 10 * time.Second
+	saveInterval = 2 * time.Second
+	tempDirName  = ".nits-temp"
+	tempKeyLen   = 16
 )
 
-var errRangeNotSupported = errors.New("range requests are not supported")
+var (
+	errRangeNotSupported = errors.New("range requests are not supported")
+	errRemoteChanged     = errors.New("remote file changed")
+)
 
 var filenameUnsafe = regexp.MustCompile(`[^a-zA-Z0-9_\-\. ]+`)
 
@@ -34,10 +43,24 @@ type Config struct {
 	Headers     map[string]string
 }
 
-type fileInfo struct {
+type remoteInfo struct {
 	size           int64
 	name           string
 	rangeSupported bool
+	etag           string
+	lastModified   string
+}
+
+func (r remoteInfo) validator() string {
+	if r.etag != "" && !strings.HasPrefix(r.etag, "W/") {
+		return r.etag
+	}
+	return r.lastModified
+}
+
+func (r remoteInfo) key() string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%d|%s|%s", r.size, r.etag, r.lastModified))
+	return hex.EncodeToString(sum[:])[:tempKeyLen]
 }
 
 type Plan struct {
@@ -45,7 +68,10 @@ type Plan struct {
 	OutputPath  string
 	Size        int64
 	Connections int
-	useSimple   bool
+	ranged      bool
+	validator   string
+	modTime     time.Time
+	key         string
 }
 
 func Prepare(ctx context.Context, cfg Config) (Plan, *Client, error) {
@@ -56,9 +82,7 @@ func Prepare(ctx context.Context, cfg Config) (Plan, *Client, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return Plan{}, nil, fmt.Errorf("unsupported scheme: %s", parsed.Scheme)
 	}
-	if cfg.Connections < 1 {
-		cfg.Connections = 1
-	}
+	cfg.Connections = max(cfg.Connections, 1)
 
 	client, err := NewClient(ClientConfig{
 		ProxyURL:    cfg.ProxyURL,
@@ -94,28 +118,86 @@ func Prepare(ctx context.Context, cfg Config) (Plan, *Client, error) {
 		}
 	}
 
+	modTime, _ := http.ParseTime(info.lastModified)
 	if existing, statErr := os.Stat(cfg.OutputPath); statErr == nil {
-		if info.size > 0 && existing.Size() == info.size {
+		sameTime := modTime.IsZero() || existing.ModTime().Truncate(time.Second).Equal(modTime)
+		if info.size > 0 && existing.Size() == info.size && sameTime {
 			return Plan{OutputPath: cfg.OutputPath}, nil, errAlreadyComplete{path: cfg.OutputPath}
 		}
 		cfg.OutputPath = renewOutputPath(cfg.OutputPath)
 	}
 
-	useSimple := !info.rangeSupported || cfg.Connections == 1 || (info.size > 0 && info.size/int64(cfg.Connections) < minMultiChunk)
 	return Plan{
 		URL:         cfg.URL,
 		OutputPath:  cfg.OutputPath,
 		Size:        info.size,
 		Connections: cfg.Connections,
-		useSimple:   useSimple,
+		ranged:      info.rangeSupported && info.size > 0,
+		validator:   info.validator(),
+		modTime:     modTime,
+		key:         info.key(),
 	}, client, nil
 }
 
 func (p Plan) Execute(ctx context.Context, client *Client, progress io.Writer) error {
-	if p.useSimple {
-		return simple(ctx, p.URL, p.OutputPath, client, progress)
+	tempDir := filepath.Join(filepath.Dir(p.OutputPath), tempDirName)
+	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+		return fmt.Errorf("error creating temp directory: %w", err)
 	}
-	return multi(ctx, p.URL, p.OutputPath, p.Connections, client, p.Size, progress)
+	base := filepath.Base(p.OutputPath)
+	removeStaleTemps(tempDir, base, p.key)
+	partPath := filepath.Join(tempDir, base+"."+p.key+".part")
+
+	var err error
+	if p.ranged {
+		err = chunked(ctx, p, client, partPath, progress)
+	} else {
+		err = stream(ctx, p, client, partPath, progress)
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(partPath, p.OutputPath); err != nil {
+		return fmt.Errorf("error moving download into place: %w", err)
+	}
+	if !p.modTime.IsZero() {
+		os.Chtimes(p.OutputPath, p.modTime, p.modTime)
+	}
+	removeTempDirIfEmpty(tempDir)
+	return nil
+}
+
+func retry(ctx context.Context, committed func() int64, attempt func() error) error {
+	high := committed()
+	failures := 0
+	for {
+		err := attempt()
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(err, errRemoteChanged) {
+			return err
+		}
+		if c := committed(); c > high {
+			high = c
+			failures = 0
+		} else {
+			failures++
+		}
+		if failures >= maxFailures {
+			return fmt.Errorf("no progress after %d attempts: %w", maxFailures, err)
+		}
+		timer := time.NewTimer(time.Second << failures)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 type errAlreadyComplete struct {
@@ -178,29 +260,29 @@ func probeURL(ctx context.Context, client *Client, link string) (bool, string, e
 	return true, link, nil
 }
 
-func statFile(ctx context.Context, client *Client, link string, useGET bool) (fileInfo, error) {
-	var resp *http.Response
-	var err error
+func statFile(ctx context.Context, client *Client, link string, useGET bool) (remoteInfo, error) {
+	method := http.MethodHead
 	if useGET {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, link, nil)
-		if reqErr != nil {
-			return fileInfo{}, reqErr
-		}
-		req.Header.Set("Range", "bytes=0-0")
-		resp, err = client.Do(req)
-	} else {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodHead, link, nil)
-		if reqErr != nil {
-			return fileInfo{}, reqErr
-		}
-		resp, err = client.Do(req)
+		method = http.MethodGet
 	}
+	req, err := http.NewRequestWithContext(ctx, method, link, nil)
 	if err != nil {
-		return fileInfo{}, err
+		return remoteInfo{}, err
+	}
+	if useGET {
+		req.Header.Set("Range", "bytes=0-0")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return remoteInfo{}, err
 	}
 	defer resp.Body.Close()
 
-	info := fileInfo{name: filenameFromDisposition(resp.Header.Get("Content-Disposition"))}
+	info := remoteInfo{
+		name:         filenameFromDisposition(resp.Header.Get("Content-Disposition")),
+		etag:         resp.Header.Get("ETag"),
+		lastModified: resp.Header.Get("Last-Modified"),
+	}
 	acceptRanges := resp.Header.Get("Accept-Ranges")
 	info.rangeSupported = acceptRanges == "bytes" || (useGET && resp.StatusCode == http.StatusPartialContent)
 
@@ -230,6 +312,22 @@ func statFile(ctx context.Context, client *Client, link string, useGET bool) (fi
 		return info, errors.New("invalid file size reported by server")
 	}
 	return info, nil
+}
+
+func rangeStart(contentRange string) int64 {
+	spec, ok := strings.CutPrefix(contentRange, "bytes ")
+	if !ok {
+		return -1
+	}
+	first, _, ok := strings.Cut(spec, "-")
+	if !ok {
+		return -1
+	}
+	start, err := strconv.ParseInt(first, 10, 64)
+	if err != nil {
+		return -1
+	}
+	return start
 }
 
 func filenameFromDisposition(header string) string {
@@ -284,6 +382,29 @@ func resumeProgress(w io.Writer, n int64) {
 	type resumer interface{ Resume(int64) }
 	if r, ok := w.(resumer); ok {
 		r.Resume(n)
+	}
+}
+
+func removeStaleTemps(dir, base, key string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		rest, ok := strings.CutPrefix(e.Name(), base+".")
+		if !ok {
+			continue
+		}
+		k, kind, ok := strings.Cut(rest, ".")
+		if !ok || k == key || len(k) != tempKeyLen {
+			continue
+		}
+		if _, err := hex.DecodeString(k); err != nil {
+			continue
+		}
+		if kind == "part" || kind == "state" || kind == "state.tmp" {
+			os.Remove(filepath.Join(dir, e.Name()))
+		}
 	}
 }
 
