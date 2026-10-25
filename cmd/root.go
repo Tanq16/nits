@@ -53,23 +53,17 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Enable debug logging")
 	cobra.OnInitialize(setupLogs)
 
-	rootCmd.AddCommand(downloadCmd)
-	rootCmd.AddCommand(gitHubReleaseCmd)
-	rootCmd.AddCommand(httpServerCmd)
-	rootCmd.AddCommand(uploadCmd)
-	rootCmd.AddCommand(ipInfoCmd)
+	addGroup("network", "Network:", downloadCmd, gitHubReleaseCmd, httpServerCmd, uploadCmd, ipInfoCmd)
+	addGroup("files", "Files:", archiveCmd.ArchiveCmd, bulkRenameCmd, duplicatesCmd, fileUnzipperCmd, imgDedupeCmd)
+	addGroup("generators", "Generators and Time:", passphraseCmd, uuidCmd, randomCmd, timeCmd.TimeCmd)
+	addGroup("data", "Data:", convertCmd, neo4jCmd)
+	rootCmd.SetHelpCommandGroupID("data")
+}
 
-	rootCmd.AddCommand(archiveCmd.ArchiveCmd)
-	rootCmd.AddCommand(bulkRenameCmd)
-	rootCmd.AddCommand(duplicatesCmd)
-	rootCmd.AddCommand(fileUnzipperCmd)
-	rootCmd.AddCommand(imgDedupeCmd)
-
-	rootCmd.AddCommand(passphraseCmd)
-	rootCmd.AddCommand(uuidCmd)
-	rootCmd.AddCommand(randomCmd)
-	rootCmd.AddCommand(timeCmd.TimeCmd)
-
-	rootCmd.AddCommand(convertCmd)
-	rootCmd.AddCommand(neo4jCmd)
+func addGroup(id, title string, cmds ...*cobra.Command) {
+	rootCmd.AddGroup(&cobra.Group{ID: id, Title: title})
+	for _, c := range cmds {
+		c.GroupID = id
+		rootCmd.AddCommand(c)
+	}
 }
