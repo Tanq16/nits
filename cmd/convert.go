@@ -42,7 +42,7 @@ Examples:
 		if len(res.Commands) > 0 {
 			u.PrintInfo("Docker run commands for services in Docker Compose file:")
 			for _, cmdStr := range res.Commands {
-				u.PrintSuccess(cmdStr)
+				u.PrintGeneric(cmdStr)
 			}
 		}
 		if res.Output != "" {
