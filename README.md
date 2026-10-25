@@ -18,7 +18,7 @@ Anbu is the self-hosted IT hub for secrets, machines, and SSH, and nits is the l
 |---|---|---|
 | Files | `archive`, `rename`, `duplicates`, `file-unzipper` | Archives, regex bulk rename, file duplicates, zip flattening |
 | Images | `img-dedup` | Duplicate image detection via perceptual hashing |
-| Network | `download`, `github-release`, `http-server`, `ip-info` | HTTP downloads, GitHub release asset fetching, local file serving, IP lookup |
+| Network | `download`, `github-release`, `http-server`, `upload-to-http-server`, `ip-info` | HTTP downloads, GitHub release asset fetching, local file serving and uploads, IP lookup |
 | Generators | `uuid`, `random-string`, `passphrase`, `time` | UUIDs, random strings, Diceware passphrases, and timestamp parsing and diffs |
 | Data | `convert`, `neo4j` | Format conversions and Neo4j Cypher queries |
 
@@ -118,7 +118,7 @@ nits img-dedup --workers 8
 
 #### `download` (alias: `dl`)
 
-Multi-connection HTTP download with automatic fallback to single connection and resume.
+Multi-connection HTTP download with automatic fallback to single connection and resume. A connection that stalls for 10 seconds reconnects and continues where it stopped.
 
 ```bash
 nits download https://example.com/file.tar.gz
@@ -142,12 +142,20 @@ nits ghr tanq16/nits -o nits.bin
 
 #### `http-server`
 
-Serve the current working directory over HTTP, with optional file upload support.
+Serve the current working directory over HTTP, with optional file upload support. With `--upload`, `/` shows an upload form and `PUT /<name>` stores a file, so `curl -T file http://host:8080/` works.
 
 ```bash
 nits http-server
 nits http-server -l 0.0.0.0:8080
 nits http-server --upload
+```
+
+#### `upload-to-http-server`
+
+Upload files to a `nits http-server --upload` instance.
+
+```bash
+nits upload-to-http-server -u 192.168.0.10:8080 video.mp4 notes.txt
 ```
 
 #### `ip-info` (alias: `ip`)
