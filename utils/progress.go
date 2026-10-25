@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -107,6 +108,7 @@ type Meter struct {
 	stopCh  chan struct{}
 	drawn   int
 	settled bool
+	group   *Group
 }
 
 func NewMeter(verb, name string, total int64, unit Unit) *Meter {
@@ -194,10 +196,13 @@ func (m *Meter) Done() {
 	avg := m.average(elapsed, false)
 	name := m.name
 	unit := m.unit
+	moved := m.current - m.base
 	m.mu.Unlock()
 
-	line := settledLine(name, cur, elapsed, avg, unit)
-	PrintSuccess(line)
+	if m.group != nil {
+		m.group.record(moved, unit, false)
+	}
+	PrintSuccess(settledLine([]string{clip(name, nameBudget(termWidth()))}, cur, elapsed, avg, unit))
 }
 
 func (m *Meter) Fail(err error) {
@@ -207,9 +212,18 @@ func (m *Meter) Fail(err error) {
 		return
 	}
 	name := m.name
+	unit := m.unit
+	moved := m.current - m.base
 	m.finishLocked()
 	m.mu.Unlock()
 
+	if m.group != nil {
+		m.group.record(moved, unit, true)
+	}
+	printFailure(name, err)
+}
+
+func printFailure(name string, err error) {
 	if GlobalDebugFlag {
 		log.Error().Err(err).Str("name", name).Msg("failed")
 		return
@@ -219,6 +233,73 @@ func (m *Meter) Fail(err error) {
 		msg = name + ": " + err.Error()
 	}
 	lipgloss.Println(errorStyle.Render("  " + StyleSymbols["fail"] + " " + msg))
+}
+
+type Group struct {
+	label  string
+	noun   string
+	start  time.Time
+	ok     int
+	failed int
+	amount int64
+	unit   Unit
+	mixed  bool
+	seen   bool
+}
+
+func NewGroup(label, noun string) *Group {
+	return &Group{label: label, noun: noun, start: time.Now()}
+}
+
+func (g *Group) Meter(verb, name string, total int64, unit Unit) *Meter {
+	m := NewMeter(verb, name, total, unit)
+	m.group = g
+	return m
+}
+
+func (g *Group) Fail(name string, err error) {
+	g.failed++
+	printFailure(name, err)
+}
+
+func (g *Group) record(moved int64, unit Unit, failed bool) {
+	if failed {
+		g.failed++
+	} else {
+		g.ok++
+	}
+	if g.seen && unit != g.unit {
+		g.mixed = true
+	}
+	g.seen = true
+	g.unit = unit
+	g.amount += max(moved, 0)
+}
+
+func (g *Group) Done() int {
+	if g.ok+g.failed <= 1 && g.failed == 0 {
+		return 0
+	}
+	elapsed := time.Since(g.start)
+	amount := g.amount
+	if g.mixed || string(g.unit) == g.noun {
+		amount = 0
+	}
+	var avg float64
+	if elapsed > 0 {
+		avg = float64(amount) / elapsed.Seconds()
+	}
+	count := fmt.Sprintf("%d %s", g.ok, g.noun)
+	if g.failed > 0 {
+		count = fmt.Sprintf("%d ok, %d failed", g.ok, g.failed)
+	}
+	line := settledLine([]string{g.label, count}, amount, elapsed, avg, g.unit)
+	if g.failed > 0 {
+		PrintError(line, nil)
+	} else {
+		PrintInfo(line)
+	}
+	return g.failed
 }
 
 func (m *Meter) finishLocked() {
@@ -425,13 +506,12 @@ func (m *Meter) average(elapsed time.Duration, live bool) float64 {
 	return float64(moved) / elapsed.Seconds()
 }
 
-func settledLine(name string, amount int64, elapsed time.Duration, avg float64, unit Unit) string {
-	name = clip(name, nameBudget(termWidth()))
-	parts := []string{name, formatScalar(amount, unit), formatElapsed(elapsed), "avg " + formatRate(avg, unit)}
+func settledLine(lead []string, amount int64, elapsed time.Duration, avg float64, unit Unit) string {
+	tail := []string{formatScalar(amount, unit), formatElapsed(elapsed), "avg " + formatRate(avg, unit)}
 	if amount <= 0 {
-		parts = []string{name, formatElapsed(elapsed)}
+		tail = []string{formatElapsed(elapsed)}
 	}
-	return strings.Join(parts, "  ")
+	return strings.Join(slices.Concat(lead, tail), "  ")
 }
 
 func nameBudget(width int) int {
