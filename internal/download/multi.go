@@ -1,227 +1,223 @@
 package download
 
 import (
-	"cmp"
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/tanq16/nits/internal/network"
 	"golang.org/x/sync/errgroup"
 )
 
-type chunk struct {
-	id         int
-	start      int64
-	end        int64
-	downloaded int64
-	completed  bool
-	path       string
+type span struct {
+	Start int64 `json:"start"`
+	End   int64 `json:"end"`
+	Done  int64 `json:"done"`
 }
 
-func multi(ctx context.Context, url, outputPath string, connections int, client *Client, fileSize int64, progress io.Writer) error {
-	tempDir := filepath.Join(filepath.Dir(outputPath), tempDirName)
-	if err := os.MkdirAll(tempDir, 0o755); err != nil {
-		return fmt.Errorf("error creating temp directory: %w", err)
-	}
+func (s span) length() int64 {
+	return s.End - s.Start + 1
+}
 
-	chunks := splitChunks(fileSize, connections)
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(connections)
-	var mu sync.Mutex
-	for i := range chunks {
-		g.Go(func() error {
-			return downloadChunk(ctx, url, outputPath, &chunks[i], client, tempDir, progress, &mu)
-		})
-	}
-	if err := g.Wait(); err != nil {
+type chunkState struct {
+	Size   int64  `json:"size"`
+	Chunks []span `json:"chunks"`
+}
+
+func chunked(ctx context.Context, p Plan, client *Client, partPath string, progress io.Writer) error {
+	statePath := strings.TrimSuffix(partPath, ".part") + ".state"
+	state, f, err := openChunked(partPath, statePath, p.Size, p.Connections)
+	if err != nil {
 		return err
 	}
-	for _, c := range chunks {
-		if !c.completed {
-			return fmt.Errorf("download incomplete: chunk %d failed", c.id)
-		}
+	defer f.Close()
+
+	done := make([]atomic.Int64, len(state.Chunks))
+	var resumed int64
+	for i, c := range state.Chunks {
+		done[i].Store(c.Done)
+		resumed += c.Done
 	}
-	return assemble(outputPath, fileSize, chunks)
+	resumeProgress(progress, resumed)
+
+	save := func() error {
+		snap := chunkState{Size: state.Size, Chunks: slices.Clone(state.Chunks)}
+		for i := range snap.Chunks {
+			snap.Chunks[i].Done = done[i].Load()
+		}
+		if err := f.Sync(); err != nil {
+			return err
+		}
+		return writeState(statePath, snap)
+	}
+
+	stop := make(chan struct{})
+	var saver sync.WaitGroup
+	saver.Go(func() {
+		tick := time.Tick(saveInterval)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-tick:
+				save()
+			}
+		}
+	})
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(p.Connections)
+	for i, c := range state.Chunks {
+		g.Go(func() error {
+			return retry(gctx, done[i].Load, func() error {
+				if done[i].Load() >= c.length() {
+					return nil
+				}
+				return fetchSpan(gctx, client, p, f, c, &done[i], progress)
+			})
+		})
+	}
+	err = g.Wait()
+	close(stop)
+	saver.Wait()
+	if err != nil {
+		save()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	os.Remove(statePath)
+	return nil
 }
 
-func splitChunks(fileSize int64, connections int) []chunk {
-	chunkSize := fileSize / int64(connections)
-	var chunks []chunk
+func openChunked(partPath, statePath string, size int64, connections int) (chunkState, *os.File, error) {
+	f, err := os.OpenFile(partPath, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return chunkState{}, nil, fmt.Errorf("error opening temp file: %w", err)
+	}
+	state, ok := readState(statePath, size)
+	if fi, err := f.Stat(); ok && err == nil && fi.Size() == size {
+		return state, f, nil
+	}
+	if err := f.Truncate(size); err != nil {
+		f.Close()
+		return chunkState{}, nil, fmt.Errorf("error allocating temp file: %w", err)
+	}
+	return chunkState{Size: size, Chunks: splitChunks(size, connections)}, f, nil
+}
+
+func readState(path string, size int64) (chunkState, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return chunkState{}, false
+	}
+	var s chunkState
+	if err := json.Unmarshal(data, &s); err != nil || s.Size != size || len(s.Chunks) == 0 {
+		return chunkState{}, false
+	}
+	var next int64
+	for _, c := range s.Chunks {
+		if c.Start != next || c.End < c.Start || c.Done < 0 || c.Done > c.length() {
+			return chunkState{}, false
+		}
+		next = c.End + 1
+	}
+	return s, next == size
+}
+
+func writeState(path string, s chunkState) error {
+	data, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func splitChunks(size int64, connections int) []span {
+	n := min(int64(connections), max(1, size/minChunkSize))
+	chunkSize := size / n
+	chunks := make([]span, 0, n)
 	var pos int64
-	for i := range connections {
-		start := pos
-		end := start + chunkSize - 1
-		if i == connections-1 {
-			end = fileSize - 1
+	for i := range n {
+		end := pos + chunkSize - 1
+		if i == n-1 {
+			end = size - 1
 		}
-		end = min(end, fileSize-1)
-		if end >= start {
-			chunks = append(chunks, chunk{id: i, start: start, end: end})
-		}
+		chunks = append(chunks, span{Start: pos, End: end})
 		pos = end + 1
 	}
 	return chunks
 }
 
-func downloadChunk(ctx context.Context, url, outputPath string, ch *chunk, client *Client, tempDir string, progress io.Writer, mu *sync.Mutex) error {
-	tempFileName := filepath.Join(tempDir, fmt.Sprintf("%s.part%d", filepath.Base(outputPath), ch.id))
-	expectedSize := ch.end - ch.start + 1
+func fetchSpan(ctx context.Context, client *Client, p Plan, f *os.File, c span, done *atomic.Int64, progress io.Writer) error {
+	start := c.Start + done.Load()
+	ctx, guard := network.NewStallGuard(ctx, stallTimeout)
+	defer guard.Stop()
 
-	reconcile := func(report func(io.Writer, int64)) int64 {
-		currentSize := int64(0)
-		if fi, err := os.Stat(tempFileName); err == nil {
-			currentSize = fi.Size()
-		}
-		if currentSize > expectedSize {
-			os.Remove(tempFileName)
-			currentSize = 0
-		}
-		if delta := currentSize - ch.downloaded; delta != 0 {
-			report(progress, delta)
-			ch.downloaded = currentSize
-		}
-		return currentSize
-	}
-
-	resumeOffset := reconcile(resumeProgress)
-	if resumeOffset == expectedSize {
-		mu.Lock()
-		ch.path = tempFileName
-		ch.completed = true
-		mu.Unlock()
-		return nil
-	}
-
-	var lastErr error
-	for retry := range maxRetries {
-		if retry > 0 {
-			timer := time.NewTimer(time.Duration(retry+1) * 500 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return ctx.Err()
-			case <-timer.C:
-			}
-			resumeOffset = reconcile(addProgress)
-		}
-		if err := writeChunk(ctx, url, ch, client, tempFileName, progress, resumeOffset); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			lastErr = err
-			resumeOffset = reconcile(addProgress)
-			continue
-		}
-		mu.Lock()
-		ch.path = tempFileName
-		ch.completed = true
-		mu.Unlock()
-		return nil
-	}
-	if lastErr != nil {
-		return fmt.Errorf("chunk %d failed after %d retries: %w", ch.id, maxRetries, lastErr)
-	}
-	return fmt.Errorf("chunk %d failed after %d retries", ch.id, maxRetries)
-}
-
-func writeChunk(ctx context.Context, url string, ch *chunk, client *Client, tempFileName string, progress io.Writer, resumeOffset int64) error {
-	flag := os.O_WRONLY | os.O_CREATE
-	if resumeOffset > 0 {
-		flag |= os.O_APPEND
-	} else {
-		flag |= os.O_TRUNC
-	}
-	tempFile, err := os.OpenFile(tempFileName, flag, 0o644)
-	if err != nil {
-		return fmt.Errorf("error opening temp file: %w", err)
-	}
-	defer tempFile.Close()
-
-	startByte := ch.start + resumeOffset
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.URL, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", startByte, ch.end))
-	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, c.End))
+	if p.validator != "" {
+		req.Header.Set("If-Range", p.validator)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return guard.Err(err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK && p.validator != "" {
+		return errRemoteChanged
+	}
 	if resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-	if resp.Header.Get("Content-Range") == "" {
-		return fmt.Errorf("missing Content-Range header")
+	if got := rangeStart(resp.Header.Get("Content-Range")); got != start {
+		return fmt.Errorf("server sent a range starting at %d, requested %d", got, start)
 	}
 
-	remaining := ch.end - startByte + 1
-	var newBytes int64
-	counter := countingWriter{w: progress, n: &newBytes}
-	written, err := io.Copy(tempFile, io.TeeReader(io.LimitReader(resp.Body, remaining), counter))
+	remaining := c.End - start + 1
+	w := &chunkWriter{f: f, off: start, done: done, progress: progress}
+	n, err := io.Copy(w, guard.Reader(io.LimitReader(resp.Body, remaining)))
 	if err != nil {
-		ch.downloaded += newBytes
-		return err
+		return guard.Err(err)
 	}
-	ch.downloaded += newBytes
-	if written != remaining {
-		return fmt.Errorf("size mismatch: expected %d remaining bytes, got %d bytes this session", remaining, written)
-	}
-	if ch.downloaded != ch.end-ch.start+1 {
-		return fmt.Errorf("total size mismatch: expected %d total bytes, got %d bytes", ch.end-ch.start+1, ch.downloaded)
+	if n < remaining {
+		return fmt.Errorf("short response: got %d of %d bytes", n, remaining)
 	}
 	return nil
 }
 
-func assemble(outputPath string, fileSize int64, chunks []chunk) error {
-	for _, c := range chunks {
-		if !c.completed {
-			return fmt.Errorf("not all chunks were completed successfully")
-		}
-	}
-	ordered := slices.Clone(chunks)
-	slices.SortFunc(ordered, func(a, b chunk) int { return cmp.Compare(a.id, b.id) })
+type chunkWriter struct {
+	f        *os.File
+	off      int64
+	done     *atomic.Int64
+	progress io.Writer
+}
 
-	destFile, err := os.Create(outputPath)
-	if err != nil {
-		return err
+func (w *chunkWriter) Write(p []byte) (int, error) {
+	n, err := w.f.WriteAt(p, w.off)
+	w.off += int64(n)
+	w.done.Add(int64(n))
+	if w.progress != nil {
+		w.progress.Write(p[:n])
 	}
-	defer destFile.Close()
-
-	var totalWritten int64
-	for _, c := range ordered {
-		tempFile, err := os.Open(c.path)
-		if err != nil {
-			return fmt.Errorf("error opening chunk file %s: %w", c.path, err)
-		}
-		fileInfo, err := tempFile.Stat()
-		if err != nil {
-			tempFile.Close()
-			return fmt.Errorf("error getting chunk file info: %w", err)
-		}
-		written, err := io.Copy(destFile, tempFile)
-		tempFile.Close()
-		if err != nil {
-			return fmt.Errorf("error copying chunk data: %w", err)
-		}
-		if written != fileInfo.Size() {
-			return fmt.Errorf("error: wrote %d bytes but chunk size is %d", written, fileInfo.Size())
-		}
-		totalWritten += written
-	}
-	if totalWritten != fileSize {
-		return fmt.Errorf("error: total written bytes (%d) doesn't match expected file size (%d)", totalWritten, fileSize)
-	}
-	for _, c := range ordered {
-		os.Remove(c.path)
-	}
-	removeTempDirIfEmpty(filepath.Dir(ordered[0].path))
-	return nil
+	return n, err
 }

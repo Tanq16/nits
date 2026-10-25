@@ -39,5 +39,5 @@ var httpServerCmd = &cobra.Command{
 
 func init() {
 	httpServerCmd.Flags().StringVarP(&httpServerFlags.listenAddress, "listen", "l", "0.0.0.0:8080", "Address and port to listen on")
-	httpServerCmd.Flags().BoolVar(&httpServerFlags.enableUpload, "upload", false, "Enable file uploads via PUT requests")
+	httpServerCmd.Flags().BoolVar(&httpServerFlags.enableUpload, "upload", false, "Enable uploads through the web form or PUT /<name>")
 }

@@ -56,6 +56,7 @@ func init() {
 	rootCmd.AddCommand(downloadCmd)
 	rootCmd.AddCommand(gitHubReleaseCmd)
 	rootCmd.AddCommand(httpServerCmd)
+	rootCmd.AddCommand(uploadCmd)
 	rootCmd.AddCommand(ipInfoCmd)
 
 	rootCmd.AddCommand(archiveCmd.ArchiveCmd)

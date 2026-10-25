@@ -1,6 +1,7 @@
 package network
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,7 @@ type HTTPServerOptions struct {
 type HTTPServer struct {
 	Options *HTTPServerOptions
 	Server  *http.Server
+	events  chan func()
 }
 
 func NewHTTPServer(options *HTTPServerOptions) *HTTPServer {
@@ -30,15 +32,23 @@ func NewHTTPServer(options *HTTPServerOptions) *HTTPServer {
 }
 
 func (s *HTTPServer) Setup() error {
-	var handler http.Handler
+	s.events = make(chan func(), 256)
+	go func() {
+		for event := range s.events {
+			event()
+		}
+	}()
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /", http.FileServer(http.Dir(".")))
 	if s.Options.EnableUpload {
-		handler = http.HandlerFunc(s.handleUpload)
-	} else {
-		handler = http.FileServer(http.Dir("."))
+		mux.HandleFunc("GET /{$}", s.handleForm)
+		mux.HandleFunc("POST /{$}", s.handleFormUpload)
+		mux.HandleFunc("PUT /{name}", s.handlePut)
 	}
 	s.Server = &http.Server{
 		Addr:    s.Options.ListenAddress,
-		Handler: s.withHTTPLogging(handler),
+		Handler: s.withHTTPLogging(mux),
 	}
 	return nil
 }
@@ -50,16 +60,23 @@ func (s *HTTPServer) Run() error {
 func (s *HTTPServer) withHTTPLogging(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.Options.OnRequest != nil {
-			s.Options.OnRequest(r.RemoteAddr, r.Method, r.URL.Path)
+			remote, method, path := r.RemoteAddr, r.Method, r.URL.Path
+			s.emit(func() { s.Options.OnRequest(remote, method, path) })
 		}
 		next.ServeHTTP(w, r)
 	}
 }
 
-func (s *HTTPServer) handleUpload(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!DOCTYPE html>
+func (s *HTTPServer) emit(event func()) {
+	select {
+	case s.events <- event:
+	default:
+	}
+}
+
+func (s *HTTPServer) handleForm(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprint(w, `<!DOCTYPE html>
 <html>
 <head>
 <style>
@@ -145,57 +162,63 @@ form.addEventListener('submit', function(e) {
 </script>
 </body>
 </html>`)
+}
+
+func (s *HTTPServer) handleFormUpload(w http.ResponseWriter, r *http.Request) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		s.reportError("failed to get multipart reader", err)
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	if r.Method == http.MethodPost {
-		reader, err := r.MultipartReader()
+	var failed []string
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
 		if err != nil {
-			s.reportError("failed to get multipart reader", err)
-			http.Error(w, "Bad Request", http.StatusBadRequest)
+			s.reportError("failed to read multipart part", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
-		for {
-			part, err := reader.NextPart()
-			if err == io.EOF {
-				break
-			}
+		switch part.FormName() {
+		case "text":
+			filename := fmt.Sprintf("text-%d.txt", time.Now().Unix())
+			path, n, err := streamPartToUniqueFile(filename, part)
 			if err != nil {
-				s.reportError("failed to read multipart part", err)
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
+				s.reportError("failed to write text file", err)
+				failed = append(failed, filename)
+				continue
 			}
-
-			switch part.FormName() {
-			case "text":
-				filename := fmt.Sprintf("text-%d.txt", time.Now().Unix())
-				path, n, err := streamPartToUniqueFile(filename, part)
-				if err != nil {
-					s.reportError("failed to write text file", err)
-					continue
-				}
-				if n == 0 {
-					os.Remove(path)
-					continue
-				}
-				s.info(fmt.Sprintf("Text saved to %s", path))
-			case "files":
-				filename := part.FileName()
-				if filename == "" {
-					continue
-				}
-				path, _, err := streamPartToUniqueFile(filename, part)
-				if err != nil {
-					s.reportError("failed to write file", err)
-					continue
-				}
-				s.info(fmt.Sprintf("File uploaded to %s", path))
+			if n == 0 {
+				os.Remove(path)
+				continue
 			}
+			s.info(fmt.Sprintf("Text saved to %s", path))
+		case "files":
+			filename := part.FileName()
+			if filename == "" {
+				continue
+			}
+			path, _, err := streamPartToUniqueFile(filename, part)
+			if err != nil {
+				s.reportError("failed to write file", err)
+				failed = append(failed, filename)
+				continue
+			}
+			s.info(fmt.Sprintf("File uploaded to %s", path))
 		}
+	}
+	if len(failed) > 0 {
+		http.Error(w, "Failed to save: "+strings.Join(failed, ", "), http.StatusInternalServerError)
+		return
+	}
 
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!DOCTYPE html>
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprint(w, `<!DOCTYPE html>
 <html>
 <head>
 <style>
@@ -207,20 +230,29 @@ body { background-color: #2a2a2a; color: #fff; font-family: sans-serif; padding:
 <p><a href="/" style="color: #4a9eff;">Upload more</a></p>
 </body>
 </html>`)
+}
+
+func (s *HTTPServer) handlePut(w http.ResponseWriter, r *http.Request) {
+	path, _, err := streamPartToUniqueFile(r.PathValue("name"), r.Body)
+	if err != nil {
+		s.reportError("failed to write file", err)
+		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return
 	}
-	http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+	s.info(fmt.Sprintf("File uploaded to %s", path))
+	w.WriteHeader(http.StatusCreated)
+	fmt.Fprintln(w, path)
 }
 
 func (s *HTTPServer) info(msg string) {
 	if s.Options != nil && s.Options.OnInfo != nil {
-		s.Options.OnInfo(msg)
+		s.emit(func() { s.Options.OnInfo(msg) })
 	}
 }
 
 func (s *HTTPServer) reportError(msg string, err error) {
 	if s.Options != nil && s.Options.OnError != nil {
-		s.Options.OnError(msg, err)
+		s.emit(func() { s.Options.OnError(msg, err) })
 	}
 }
 

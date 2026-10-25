@@ -6,121 +6,77 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
-	"time"
+
+	"github.com/tanq16/nits/internal/network"
 )
 
-func simple(ctx context.Context, url, outputPath string, client *Client, progress io.Writer) error {
-	tempDir := filepath.Join(filepath.Dir(outputPath), tempDirName)
-	if err := os.MkdirAll(tempDir, 0o755); err != nil {
-		return fmt.Errorf("error creating temp directory: %w", err)
-	}
-	tempOutputPath := filepath.Join(tempDir, filepath.Base(outputPath)) + ".part"
-
-	var reported int64
-	reconcile := func(report func(io.Writer, int64)) {
-		currentSize := int64(0)
-		if fi, err := os.Stat(tempOutputPath); err == nil {
-			currentSize = fi.Size()
-		}
-		if delta := currentSize - reported; delta != 0 {
-			report(progress, delta)
-			reported = currentSize
-		}
-	}
-	reconcile(resumeProgress)
-
-	var lastErr error
-	for retry := range maxRetries {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if retry > 0 {
-			timer := time.NewTimer(time.Duration(retry+1) * 500 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return ctx.Err()
-			case <-timer.C:
-			}
-			reconcile(addProgress)
-		}
-		err := simpleAttempt(ctx, url, tempOutputPath, client, progress, &reported)
+func stream(ctx context.Context, p Plan, client *Client, partPath string, progress io.Writer) error {
+	size := func() int64 {
+		fi, err := os.Stat(partPath)
 		if err != nil {
-			lastErr = err
-			reconcile(addProgress)
-			continue
+			return 0
 		}
-		if err := os.Rename(tempOutputPath, outputPath); err != nil {
-			return fmt.Errorf("error renaming (finalizing) output file: %w", err)
-		}
-		removeTempDirIfEmpty(tempDir)
-		return nil
+		return fi.Size()
 	}
-	return fmt.Errorf("download failed after %d retries: %w", maxRetries, lastErr)
+	reported := size()
+	resumeProgress(progress, reported)
+	return retry(ctx, size, func() error {
+		return streamAttempt(ctx, client, p, partPath, progress, &reported)
+	})
 }
 
-func simpleAttempt(ctx context.Context, url, tempOutputPath string, client *Client, progress io.Writer, reported *int64) error {
-	var resumeOffset int64
-	fileMode := os.O_CREATE | os.O_WRONLY
-	if fileInfo, err := os.Stat(tempOutputPath); err == nil {
-		resumeOffset = fileInfo.Size()
-		fileMode |= os.O_APPEND
-	} else {
-		fileMode |= os.O_TRUNC
+func streamAttempt(ctx context.Context, client *Client, p Plan, partPath string, progress io.Writer, reported *int64) error {
+	var offset int64
+	if fi, err := os.Stat(partPath); err == nil {
+		offset = fi.Size()
 	}
 
-	outFile, err := os.OpenFile(tempOutputPath, fileMode, 0o644)
-	if err != nil {
-		return fmt.Errorf("error creating output file: %w", err)
-	}
-	defer func() {
-		if outFile != nil {
-			outFile.Close()
-		}
-	}()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	ctx, guard := network.NewStallGuard(ctx, stallTimeout)
+	defer guard.Stop()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.URL, nil)
 	if err != nil {
 		return fmt.Errorf("error creating GET request: %w", err)
 	}
-	if resumeOffset > 0 {
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeOffset))
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+		if p.validator != "" {
+			req.Header.Set("If-Range", p.validator)
+		}
 	}
-	req.Header.Set("Connection", "keep-alive")
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("error executing GET request: %w", err)
+		return guard.Err(fmt.Errorf("error executing GET request: %w", err))
 	}
 	defer resp.Body.Close()
 
 	switch {
-	case resumeOffset > 0 && resp.StatusCode == http.StatusPartialContent:
-	case resumeOffset > 0 && resp.StatusCode == http.StatusOK:
-		outFile.Close()
-		outFile = nil
-		outFile, err = os.OpenFile(tempOutputPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		if err != nil {
-			return fmt.Errorf("error creating output file: %w", err)
-		}
-		if *reported > 0 {
-			addProgress(progress, -*reported)
-			*reported = 0
-		}
-		resumeOffset = 0
-	case resumeOffset == 0 && resp.StatusCode == http.StatusOK:
-	case resumeOffset == 0 && resp.StatusCode == http.StatusPartialContent:
+	case resp.StatusCode == http.StatusPartialContent && offset > 0 && rangeStart(resp.Header.Get("Content-Range")) == offset:
+	case resp.StatusCode == http.StatusOK, resp.StatusCode == http.StatusPartialContent && rangeStart(resp.Header.Get("Content-Range")) == 0:
+		offset = 0
 	default:
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("unexpected response: %d %s", resp.StatusCode, resp.Header.Get("Content-Range"))
 	}
 
-	if _, err := io.Copy(outFile, io.TeeReader(resp.Body, countingWriter{w: progress, n: reported})); err != nil {
-		return fmt.Errorf("error reading response body: %w", err)
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if offset == 0 {
+		flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+		addProgress(progress, -*reported)
+		*reported = 0
 	}
-	if err := outFile.Sync(); err != nil {
+	out, err := os.OpenFile(partPath, flags, 0o644)
+	if err != nil {
+		return fmt.Errorf("error opening temp file: %w", err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(io.MultiWriter(out, countingWriter{w: progress, n: reported}), guard.Reader(resp.Body)); err != nil {
+		return guard.Err(fmt.Errorf("error reading response body: %w", err))
+	}
+	if err := out.Sync(); err != nil {
 		return err
+	}
+	if p.Size > 0 && *reported != p.Size {
+		return fmt.Errorf("short response: got %d of %d bytes", *reported, p.Size)
 	}
 	return nil
 }
