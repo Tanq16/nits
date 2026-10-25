@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/tanq16/nits/internal/network"
 	"golang.org/x/sync/errgroup"
 )
@@ -48,15 +49,18 @@ func chunked(ctx context.Context, p Plan, client *Client, partPath string, progr
 	}
 	resumeProgress(progress, resumed)
 
-	save := func() error {
+	save := func() {
 		snap := chunkState{Size: state.Size, Chunks: slices.Clone(state.Chunks)}
 		for i := range snap.Chunks {
 			snap.Chunks[i].Done = done[i].Load()
 		}
-		if err := f.Sync(); err != nil {
-			return err
+		err := f.Sync()
+		if err == nil {
+			err = writeState(statePath, snap)
 		}
-		return writeState(statePath, snap)
+		if err != nil {
+			log.Debug().Err(err).Str("state", statePath).Msg("failed to save download state")
+		}
 	}
 
 	stop := make(chan struct{})
