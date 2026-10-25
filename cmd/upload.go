@@ -35,7 +35,7 @@ func runUpload(cmd *cobra.Command, args []string) {
 		server = "http://" + server
 	}
 
-	failed := 0
+	g := u.NewGroup("Upload", "files")
 	for _, path := range args {
 		name := filepath.Base(path)
 		fi, err := os.Stat(path)
@@ -43,15 +43,13 @@ func runUpload(cmd *cobra.Command, args []string) {
 			err = errors.New("not a regular file")
 		}
 		if err != nil {
-			u.PrintIndentedError(fmt.Sprintf("%s: %v", name, err), err)
-			failed++
+			g.Fail(name, err)
 			continue
 		}
-		m := u.NewMeter("Uploading", name, fi.Size(), u.UnitBytes)
+		m := g.Meter("Uploading", name, fi.Size(), u.UnitBytes)
 		stored, err := network.Upload(ctx, server, path, m)
 		if err != nil {
 			m.Fail(err)
-			failed++
 			continue
 		}
 		m.Done()
@@ -59,8 +57,8 @@ func runUpload(cmd *cobra.Command, args []string) {
 			u.PrintIndentedSuccess(fmt.Sprintf("stored as %s", stored))
 		}
 	}
-	if failed > 0 {
-		u.PrintFatal(fmt.Sprintf("%d of %d uploads failed", failed, len(args)), nil)
+	if g.Done() > 0 {
+		os.Exit(1)
 	}
 }
 
